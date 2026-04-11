@@ -302,9 +302,9 @@ function NotificationToast({ notice }) {
     <div
       style={{
         position: "absolute",
-        top: 18,
+        top: 20,
         left: "50%",
-        transform: "translateX(-50%) translateY(-100%)",
+        transform: "translateX(-50%)",
         minWidth: 280,
         zIndex: 20,
         padding: "14px 18px",
@@ -1041,8 +1041,8 @@ export function SwipeView({
 
       <style>{`
         @keyframes toastFloat {
-          from { opacity: 0; transform: translateX(-50%) translateY(-112%); }
-          to { opacity: 1; transform: translateX(-50%) translateY(-100%); }
+          from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+          to { opacity: 1; transform: translateX(-50%) translateY(0); }
         }
 
         @keyframes fadeRise {
