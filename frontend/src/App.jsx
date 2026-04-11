@@ -184,7 +184,14 @@ export default function App() {
   const handleAddToCollection = useCallback((collectionId, experienceId) => {
     setCollections((current) =>
       current.map((collection) =>
-        collection.id === collectionId
+        collection.id === "saved"
+          ? {
+              ...collection,
+              itemIds: collection.itemIds.includes(experienceId)
+                ? collection.itemIds
+                : [...collection.itemIds, experienceId],
+            }
+          : collection.id === collectionId
           ? {
               ...collection,
               itemIds: collection.itemIds.includes(experienceId)
@@ -363,7 +370,10 @@ export default function App() {
             experience={detailExp}
             onBack={handleBack}
             onSave={handleSave}
+            onAddToCollection={handleAddToCollection}
+            onRemoveFromCollection={handleRemoveFromCollection}
             isSaved={savedIds.includes(detailExp.id)}
+            collections={collections}
           />
         ) : tab === "discover" ? (
           <SwipeView

@@ -1,8 +1,62 @@
+import { useMemo, useState } from "react";
 import { C } from "../theme/palette.js";
 import { SectionLabel, Tag, ConditionBadge } from "./ui.jsx";
 import { CardImage } from "./CardImage.jsx";
 
-export function DetailView({ experience, onBack, onSave, isSaved }) {
+function CollectionToggle({ label, icon, active, locked, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={locked}
+      style={{
+        padding: "10px 14px",
+        borderRadius: 999,
+        border: `1px solid ${active ? C.green : C.border}`,
+        background: active ? C.greenLight : "#fff",
+        color: active ? C.green : C.textMid,
+        cursor: locked ? "default" : "pointer",
+        fontFamily: "'DM Sans', sans-serif",
+        fontSize: 12,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+      }}
+    >
+      <span>{icon}</span>
+      <span>{label}</span>
+      <span>{active ? "✓" : "+"}</span>
+    </button>
+  );
+}
+
+export function DetailView({
+  experience,
+  onBack,
+  onSave,
+  onAddToCollection,
+  onRemoveFromCollection,
+  isSaved,
+  collections,
+}) {
+  const [showCollectionManager, setShowCollectionManager] = useState(false);
+
+  const memberships = useMemo(
+    () =>
+      collections.filter((collection) =>
+        collection.itemIds.includes(experience.id),
+      ),
+    [collections, experience.id],
+  );
+
+  const savedCollection = collections.find((collection) => collection.id === "saved");
+  const customMemberships = memberships.filter((collection) => collection.id !== "saved");
+
+  const handlePrimarySave = () => {
+    onSave(experience.id);
+    setShowCollectionManager(true);
+  };
+
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "32px 40px" }}>
       <button
@@ -149,9 +203,9 @@ export function DetailView({ experience, onBack, onSave, isSaved }) {
             ))}
           </div>
 
-          <div style={{ display: "flex", gap: 12 }}>
+          <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
             <button
-              onClick={() => onSave(experience.id)}
+              onClick={handlePrimarySave}
               style={{
                 flex: 1,
                 padding: "14px",
@@ -166,7 +220,7 @@ export function DetailView({ experience, onBack, onSave, isSaved }) {
                 color: isSaved ? C.green : "#fff",
               }}
             >
-              {isSaved ? "✓ Saved" : "Save to collection"}
+              {isSaved ? "Manage collections" : "Save to collection"}
             </button>
             <button
               style={{
@@ -183,6 +237,68 @@ export function DetailView({ experience, onBack, onSave, isSaved }) {
               Share
             </button>
           </div>
+
+          {isSaved ? (
+            <p style={{ margin: "0 0 18px", fontSize: 13, color: C.textSoft }}>
+              Saved in {savedCollection?.label}.{customMemberships.length ? ` Also in ${customMemberships.map((collection) => collection.label).join(", ")}.` : ""}
+            </p>
+          ) : null}
+
+          {showCollectionManager ? (
+            <div
+              style={{
+                padding: 18,
+                borderRadius: 18,
+                background: "#fff",
+                border: `1px solid ${C.borderLight}`,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                <SectionLabel style={{ marginBottom: 0 }}>Save To Collections</SectionLabel>
+                <button
+                  type="button"
+                  onClick={() => setShowCollectionManager(false)}
+                  style={{
+                    border: "none",
+                    background: "none",
+                    color: C.textSoft,
+                    cursor: "pointer",
+                    fontFamily: "'DM Sans', sans-serif",
+                    fontSize: 12,
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                {collections.map((collection) => {
+                  const active = collection.itemIds.includes(experience.id);
+                  const locked = collection.id === "saved" && active;
+
+                  return (
+                    <CollectionToggle
+                      key={collection.id}
+                      label={collection.label}
+                      icon={collection.icon}
+                      active={active}
+                      locked={locked}
+                      onClick={() => {
+                        if (locked) return;
+                        if (active) {
+                          onRemoveFromCollection(collection.id, experience.id);
+                        } else {
+                          onAddToCollection(collection.id, experience.id);
+                        }
+                      }}
+                    />
+                  );
+                })}
+              </div>
+              <p style={{ margin: "12px 0 0", fontSize: 12, color: C.textSoft }}>
+                Adding to any collection also keeps this experience in Saved.
+              </p>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
