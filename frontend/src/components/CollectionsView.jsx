@@ -5,6 +5,175 @@ import { CardImage } from "./CardImage.jsx";
 import { formatInsightLine, getCollectionSummary, getWhyForYou, getWhyNow } from "../lib/insights.js";
 import { Drifty } from "./Drifty.jsx";
 
+const API_BASE = "http://localhost:8000";
+
+function TripPlanModal({ experience, onClose }) {
+  const [plan, setPlan] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    fetch(`${API_BASE}/api/plan-trip`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: experience.title,
+        category: experience.categoryLabel,
+        distance: experience.distance,
+        difficulty: experience.difficulty,
+        cost: experience.cost,
+        description: experience.subtitle || experience.description,
+        location: experience.location,
+        tags: experience.tags,
+      }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to plan trip");
+        return res.json();
+      })
+      .then((data) => {
+        if (!cancelled) setPlan(data.plan);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [experience]);
+
+  const formatPlan = (text) => {
+    return text.split("\n").map((line, i) => {
+      const trimmed = line.trim();
+      if (!trimmed) return <br key={i} />;
+      if (trimmed.startsWith("**") && trimmed.endsWith("**")) {
+        return (
+          <h4 key={i} style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 15, color: C.text, margin: "18px 0 6px" }}>
+            {trimmed.replace(/\*\*/g, "")}
+          </h4>
+        );
+      }
+      if (/^\d+\.\s\*\*/.test(trimmed)) {
+        const clean = trimmed.replace(/\*\*/g, "");
+        return (
+          <h4 key={i} style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 15, color: C.text, margin: "18px 0 6px" }}>
+            {clean}
+          </h4>
+        );
+      }
+      if (trimmed.startsWith("- ") || trimmed.startsWith("• ")) {
+        return (
+          <div key={i} style={{ display: "flex", gap: 8, marginBottom: 4, fontSize: 13, color: C.textMid, lineHeight: 1.6 }}>
+            <span style={{ color: C.green, flexShrink: 0 }}>•</span>
+            <span>{trimmed.slice(2).replace(/\*\*/g, "")}</span>
+          </div>
+        );
+      }
+      return <p key={i} style={{ margin: "4px 0", fontSize: 13, color: C.textMid, lineHeight: 1.6 }}>{trimmed.replace(/\*\*/g, "")}</p>;
+    });
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1000,
+        background: "rgba(0,0,0,0.4)",
+        backdropFilter: "blur(4px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+        animation: "fadeIn 0.2s ease",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: C.parchment,
+          borderRadius: 24,
+          width: "100%",
+          maxWidth: 520,
+          maxHeight: "80vh",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+          boxShadow: "0 24px 60px rgba(0,0,0,0.2)",
+          animation: "slideUp 0.3s ease",
+        }}
+      >
+        <div style={{ padding: "20px 24px 16px", borderBottom: `1px solid ${C.borderLight}`, display: "flex", alignItems: "center", gap: 12 }}>
+          <Drifty size={36} pose="clipboard" />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: C.textSoft, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 2 }}>Trip Plan</div>
+            <h3 style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 17, color: C.text, margin: 0 }}>{experience.title}</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 10,
+              border: `1px solid ${C.borderLight}`,
+              background: "#fff",
+              cursor: "pointer",
+              fontSize: 16,
+              color: C.textSoft,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px 28px" }}>
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "48px 20px" }}>
+              <Drifty size={64} pose="wave" style={{ margin: "0 auto 16px", animation: "driftyBounce 1.2s ease-in-out infinite" }} />
+              <p style={{ fontSize: 14, color: C.textMid, fontFamily: "'DM Sans', sans-serif" }}>
+                Planning your adventure...
+              </p>
+            </div>
+          ) : error ? (
+            <div style={{ textAlign: "center", padding: "48px 20px" }}>
+              <p style={{ fontSize: 14, color: "#c0392b", marginBottom: 12 }}>Could not generate a plan right now.</p>
+              <p style={{ fontSize: 12, color: C.textSoft }}>{error}</p>
+            </div>
+          ) : (
+            <div>{formatPlan(plan)}</div>
+          )}
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(24px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes driftyBounce {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-8px); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 function ComparisonMetric({ label, value }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12, paddingBottom: 8, marginBottom: 8, borderBottom: `1px solid ${C.borderLight}` }}>
@@ -163,7 +332,7 @@ function CompareCard({ experience, onViewDetail, onRemove, prefs, highlight }) {
   );
 }
 
-function CollectionCard({ experience, onViewDetail, onRemove, removeLabel, comparing, onToggleCompare, compareSelected, compareDisabled }) {
+function CollectionCard({ experience, onViewDetail, onRemove, removeLabel, comparing, onToggleCompare, compareSelected, compareDisabled, onPlanTrip }) {
   return (
     <div
       onClick={() => onViewDetail(experience)}
@@ -232,25 +401,53 @@ function CollectionCard({ experience, onViewDetail, onRemove, removeLabel, compa
           <Tag bg={C.tanLight} color={C.tan}>{experience.cost}</Tag>
           <ConditionBadge type={experience.conditionType} label={experience.condition} />
         </div>
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onRemove(experience.id);
-          }}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 10,
-            border: `1px solid ${C.border}`,
-            background: "#fff",
-            color: C.textSoft,
-            fontSize: 12,
-            cursor: "pointer",
-            fontFamily: "'DM Sans', sans-serif",
-          }}
-        >
-          {removeLabel}
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onPlanTrip(experience);
+            }}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 10,
+              border: "none",
+              background: C.green,
+              color: "#fff",
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: "'DM Sans', sans-serif",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              transition: "opacity 0.15s",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.88"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
+          >
+            🗺️ Plan Trip
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRemove(experience.id);
+            }}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 10,
+              border: `1px solid ${C.border}`,
+              background: "#fff",
+              color: C.textSoft,
+              fontSize: 12,
+              cursor: "pointer",
+              fontFamily: "'DM Sans', sans-serif",
+            }}
+          >
+            {removeLabel}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -271,6 +468,7 @@ export function CollectionsView({
   const [isCreating, setIsCreating] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [compareIds, setCompareIds] = useState([]);
+  const [planningExp, setPlanningExp] = useState(null);
 
   useEffect(() => {
     if (!collections.some((collection) => collection.id === activeCol)) {
@@ -743,11 +941,16 @@ export function CollectionsView({
                 onToggleCompare={toggleCompare}
                 compareSelected={compareIds.includes(experience.id)}
                 compareDisabled={compareIds.length >= 3 && !compareIds.includes(experience.id)}
+                onPlanTrip={setPlanningExp}
               />
             ))}
           </div>
         )}
       </div>
+
+      {planningExp && (
+        <TripPlanModal experience={planningExp} onClose={() => setPlanningExp(null)} />
+      )}
     </div>
   );
 }
