@@ -1,5 +1,9 @@
 const STORAGE_KEY = "drift_v1";
 
+function getStorageKey(userId = "local-guest") {
+  return `${STORAGE_KEY}:${userId}`;
+}
+
 /**
  * @returns {{
  *   onboardingComplete: boolean,
@@ -8,9 +12,9 @@ const STORAGE_KEY = "drift_v1";
  *   skippedIds: string[],
  * } | null}
  */
-export function loadPersistedState() {
+export function loadPersistedState(userId = "local-guest") {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(getStorageKey(userId));
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (!data || typeof data !== "object") return null;
@@ -20,17 +24,17 @@ export function loadPersistedState() {
   }
 }
 
-export function savePersistedState(state) {
+export function savePersistedState(state, userId = "local-guest") {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(getStorageKey(userId), JSON.stringify(state));
   } catch {
     /* quota / private mode */
   }
 }
 
-export function clearPersistedState() {
+export function clearPersistedState(userId = "local-guest") {
   try {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(getStorageKey(userId));
   } catch {
     /* ignore */
   }

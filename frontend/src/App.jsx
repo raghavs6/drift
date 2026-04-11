@@ -17,9 +17,6 @@ import { C } from "./theme/palette.js";
 
 const SEEDED_EXPERIENCES = normalizeExperiences(rawExperiencesMidwest);
 
-const initialPersisted =
-  typeof window !== "undefined" ? loadPersistedState() : null;
-
 const DEFAULT_COLLECTIONS = [
   { id: "saved", label: "Saved", icon: "💚", itemIds: [] },
   { id: "bucket", label: "Bucket List", icon: "⭐", itemIds: [] },
@@ -111,16 +108,12 @@ export default function App() {
   );
   const [authBusy, setAuthBusy] = useState(false);
   const [authReady, setAuthReady] = useState(() => !hasSupabaseConfig);
-  const [screen, setScreen] = useState(() =>
-    initialPersisted?.onboardingComplete ? "main" : "onboarding",
-  );
+  const [screen, setScreen] = useState("onboarding");
   const [tab, setTab] = useState("discover");
-  const [prefs, setPrefs] = useState(() => mergePrefs(initialPersisted?.prefs));
+  const [prefs, setPrefs] = useState(() => mergePrefs(null));
   const [experiences, setExperiences] = useState(SEEDED_EXPERIENCES);
-  const [collections, setCollections] = useState(() =>
-    normalizeCollections(initialPersisted?.collections, initialPersisted?.savedIds),
-  );
-  const [skippedIds, setSkippedIds] = useState(() => initialPersisted?.skippedIds ?? []);
+  const [collections, setCollections] = useState(() => normalizeCollections(null, []));
+  const [skippedIds, setSkippedIds] = useState([]);
   const [detailExp, setDetailExp] = useState(null);
   const [swipeCollectionId, setSwipeCollectionId] = useState("saved");
   const [showPreferences, setShowPreferences] = useState(false);
@@ -137,6 +130,7 @@ export default function App() {
     () => collections.find((collection) => collection.id === "saved")?.itemIds ?? [],
     [collections],
   );
+  const currentUserId = session?.user?.id || "local-guest";
 
   const locationOptions = useMemo(() => getLocationOptions(experiences), [experiences]);
 
@@ -280,8 +274,8 @@ export default function App() {
       collections,
       savedIds,
       skippedIds,
-    });
-  }, [screen, prefs, collections, savedIds, skippedIds]);
+    }, currentUserId);
+  }, [screen, prefs, collections, savedIds, skippedIds, currentUserId]);
 
   useEffect(() => {
     const link = document.createElement("link");
@@ -293,7 +287,6 @@ export default function App() {
   useEffect(() => {
     if (!hasSupabaseConfig || !supabase) {
       setAuthReady(true);
-      setScreen(initialPersisted?.onboardingComplete ? "main" : "onboarding");
       return undefined;
     }
 
@@ -303,13 +296,7 @@ export default function App() {
       if (!mounted) return;
       setSession(data.session ?? null);
       setAuthReady(true);
-      setScreen(
-        data.session
-          ? initialPersisted?.onboardingComplete
-            ? "main"
-            : "onboarding"
-          : "welcome",
-      );
+      setScreen(data.session ? "onboarding" : "welcome");
     });
 
     const {
@@ -319,13 +306,7 @@ export default function App() {
       setSession(nextSession ?? null);
       setAuthBusy(false);
       setAuthReady(true);
-      setScreen(
-        nextSession
-          ? initialPersisted?.onboardingComplete
-            ? "main"
-            : "onboarding"
-          : "welcome",
-      );
+      setScreen(nextSession ? "onboarding" : "welcome");
     });
 
     return () => {
@@ -333,6 +314,21 @@ export default function App() {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!authReady) return;
+    if (hasSupabaseConfig && !session) return;
+
+    const persisted = loadPersistedState(currentUserId);
+    setPrefs(mergePrefs(persisted?.prefs));
+    setCollections(normalizeCollections(persisted?.collections, persisted?.savedIds));
+    setSkippedIds(persisted?.skippedIds ?? []);
+    setTab("discover");
+    setDetailExp(null);
+    setSwipeCollectionId("saved");
+    setShowPreferences(false);
+    setScreen(persisted?.onboardingComplete ? "main" : "onboarding");
+  }, [authReady, currentUserId, session]);
 
   useEffect(() => {
     const controller = new AbortController();
