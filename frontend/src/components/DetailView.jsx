@@ -40,6 +40,7 @@ export function DetailView({
   collections,
 }) {
   const [showCollectionManager, setShowCollectionManager] = useState(false);
+  const [shareStatus, setShareStatus] = useState("");
 
   const memberships = useMemo(
     () =>
@@ -55,6 +56,32 @@ export function DetailView({
   const handlePrimarySave = () => {
     onSave(experience.id);
     setShowCollectionManager(true);
+  };
+
+  const handleShare = async () => {
+    const shareUrl = `${window.location.origin}?experience=${encodeURIComponent(experience.id)}`;
+    const sharePayload = {
+      title: experience.title,
+      text: `${experience.title} in ${experience.location}`,
+      url: shareUrl,
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(sharePayload);
+        setShareStatus("Shared");
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+        setShareStatus("Link copied");
+      } else {
+        window.prompt("Copy this link", shareUrl);
+        setShareStatus("Link ready to copy");
+      }
+    } catch (error) {
+      if (error?.name !== "AbortError") {
+        setShareStatus("Share failed");
+      }
+    }
   };
 
   return (
@@ -223,6 +250,8 @@ export function DetailView({
               {isSaved ? "Manage collections" : "Save to collection"}
             </button>
             <button
+              type="button"
+              onClick={handleShare}
               style={{
                 padding: "14px 20px",
                 borderRadius: 14,
@@ -237,6 +266,12 @@ export function DetailView({
               Share
             </button>
           </div>
+
+          {shareStatus ? (
+            <p style={{ margin: "0 0 14px", fontSize: 12, color: C.textSoft }}>
+              {shareStatus}
+            </p>
+          ) : null}
 
           {isSaved ? (
             <p style={{ margin: "0 0 18px", fontSize: 13, color: C.textSoft }}>

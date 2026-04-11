@@ -7,13 +7,14 @@ import { TopNav } from "./components/TopNav.jsx";
 import { OnboardingScreen } from "./components/OnboardingScreen.jsx";
 import { DetailView } from "./components/DetailView.jsx";
 import { CollectionsView } from "./components/CollectionsView.jsx";
-import { CATEGORIES, DEFAULT_LOCATION } from "./lib/appConstants.js";
+import { CATEGORIES, DEFAULT_LOCATION, getLocationOptions } from "./lib/appConstants.js";
 import { buildDiscoverDeck, mergePrefs, DEFAULT_PREFS } from "./lib/discoverDeck.js";
+import { fetchExperiences } from "./lib/api.js";
 import { loadPersistedState, savePersistedState } from "./lib/persistence.js";
 import { supabase, hasSupabaseConfig } from "./supabase.js";
 import { C } from "./theme/palette.js";
 
-const EXPERIENCES = normalizeExperiences(rawExperiencesMidwest);
+const SEEDED_EXPERIENCES = normalizeExperiences(rawExperiencesMidwest);
 
 const initialPersisted =
   typeof window !== "undefined" ? loadPersistedState() : null;
@@ -114,6 +115,7 @@ export default function App() {
   );
   const [tab, setTab] = useState("discover");
   const [prefs, setPrefs] = useState(() => mergePrefs(initialPersisted?.prefs));
+  const [experiences, setExperiences] = useState(SEEDED_EXPERIENCES);
   const [collections, setCollections] = useState(() =>
     normalizeCollections(initialPersisted?.collections, initialPersisted?.savedIds),
   );
@@ -126,14 +128,16 @@ export default function App() {
     [collections],
   );
 
+  const locationOptions = useMemo(() => getLocationOptions(experiences), [experiences]);
+
   const removedFromDiscover = useMemo(
     () => [...new Set([...skippedIds, ...savedIds])],
     [skippedIds, savedIds],
   );
 
   const discoverDeck = useMemo(
-    () => buildDiscoverDeck(EXPERIENCES, prefs, removedFromDiscover),
-    [prefs, removedFromDiscover],
+    () => buildDiscoverDeck(experiences, prefs, removedFromDiscover),
+    [experiences, prefs, removedFromDiscover],
   );
 
   const prefsSummary = useMemo(() => formatPrefsSummary(prefs), [prefs]);
@@ -267,6 +271,23 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    fetchExperiences()
+      .then((items) => {
+        if (cancelled || !items.length) return;
+        setExperiences(normalizeExperiences(items));
+      })
+      .catch(() => {
+        /* keep seeded fallback until backend is ready */
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!hasSupabaseConfig || !supabase) {
       setAuthReady(true);
       setScreen(initialPersisted?.onboardingComplete ? "main" : "onboarding");
@@ -347,7 +368,7 @@ export default function App() {
   }
 
   if (screen === "onboarding") {
-    return <OnboardingScreen onComplete={handleOnboardingComplete} />;
+    return <OnboardingScreen onComplete={handleOnboardingComplete} locationOptions={locationOptions} />;
   }
 
   return (
@@ -404,7 +425,7 @@ export default function App() {
         ) : (
           <CollectionsView
             collections={collections}
-            experiences={EXPERIENCES}
+            experiences={experiences}
             onViewDetail={handleDetail}
             onCreateCollection={handleCreateCollection}
             onAddToCollection={handleAddToCollection}

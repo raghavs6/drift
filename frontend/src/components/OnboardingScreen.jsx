@@ -7,7 +7,6 @@ import {
   AGES,
   COMFORT,
   DEFAULT_LOCATION,
-  LOCATION_OPTIONS,
 } from "../lib/appConstants.js";
 
 const TreeLine = ({ style }) => (
@@ -77,7 +76,7 @@ const ToggleSwitch = ({ on }) => (
   </div>
 );
 
-export function OnboardingScreen({ onComplete }) {
+export function OnboardingScreen({ onComplete, locationOptions = [] }) {
   const [step, setStep] = useState(0);
   const [prefs, setPrefs] = useState({
     location: DEFAULT_LOCATION,
@@ -203,7 +202,7 @@ export function OnboardingScreen({ onComplete }) {
                     fontFamily: "'DM Sans', sans-serif",
                   }}
                 >
-                  {LOCATION_OPTIONS.map((location) => (
+                  {(locationOptions.length ? locationOptions : [DEFAULT_LOCATION]).map((location) => (
                     <option key={location} value={location}>
                       {location}
                     </option>

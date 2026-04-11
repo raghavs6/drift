@@ -1,5 +1,3 @@
-import rawExperiences from "../data/experiences.json";
-
 export const CATEGORIES = [
   { id: "hiking", label: "Hiking", icon: "🥾" },
   { id: "water", label: "Water", icon: "🛶" },
@@ -28,9 +26,11 @@ export function getStateFromLocation(locationLabel = "") {
   return locationLabel.split(",").map((part) => part.trim()).filter(Boolean).at(-1) || "";
 }
 
-export const LOCATION_OPTIONS = [...new Set(rawExperiences.map((experience) => experience.location))]
-  .sort((a, b) => {
-    const stateCompare = getStateFromLocation(a).localeCompare(getStateFromLocation(b));
-    if (stateCompare !== 0) return stateCompare;
-    return a.localeCompare(b);
-  });
+export function getLocationOptions(experiences = []) {
+  return [...new Set(experiences.map((experience) => experience.location).filter(Boolean))]
+    .sort((a, b) => {
+      const stateCompare = getStateFromLocation(a).localeCompare(getStateFromLocation(b));
+      if (stateCompare !== 0) return stateCompare;
+      return a.localeCompare(b);
+    });
+}
