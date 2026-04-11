@@ -7,6 +7,8 @@ import { CardImage } from "./components/CardImage.jsx";
 import { SwipeView } from "./components/SwipeView.jsx";
 import { buildDiscoverDeck, mergePrefs, DEFAULT_PREFS } from "./lib/discoverDeck.js";
 import { loadPersistedState, savePersistedState } from "./lib/persistence.js";
+import { WelcomeScreen } from "./components/WelcomeScreen.jsx";
+import { supabase } from "./supabase.js";
 
 // ─── Google Fonts ─────────────────────────────────────────────────────────────
 // Libre Baskerville (serif headings) + DM Sans (body) — loaded in root useEffect
@@ -89,7 +91,7 @@ const ToggleSwitch = ({ on }) => (
 
 // ─── Top Navigation ───────────────────────────────────────────────────────────
 
-function TopNav({ tab, onTab, savedCount = 0, maxTravelLabel = "30 min" }) {
+function TopNav({ tab, onTab, onSignOut, savedCount = 0, maxTravelLabel = "30 min" }) {
   return (
     <header style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 50, height: 56,
       background: "rgba(250,249,246,0.92)", backdropFilter: "blur(8px)",
@@ -119,6 +121,14 @@ function TopNav({ tab, onTab, savedCount = 0, maxTravelLabel = "30 min" }) {
             {t.label}
           </button>
         ))}
+        <button
+          onClick={onSignOut}
+          style={{ marginLeft: 12, padding: "6px 14px", borderRadius: 10, fontSize: 13,
+            fontWeight: 500, cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
+            border: `1px solid ${C.border}`, background: "#fff", color: C.textMid,
+            transition: "all 0.15s" }}>
+          Sign out
+        </button>
         <div style={{ marginLeft: 12, width: 32, height: 32, borderRadius: "50%",
           background: `linear-gradient(135deg, ${C.green}, #7BA88A)`,
           display: "flex", alignItems: "center", justifyContent: "center",
@@ -570,6 +580,9 @@ function CollectionsView({ savedIds, experiences, onViewDetail }) {
 // ─── Root App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
+  const [session, setSession] = useState(null);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   const [screen, setScreen] = useState(() =>
     initialPersisted?.onboardingComplete ? "main" : "onboarding",
   );
@@ -615,6 +628,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (screen === "welcome") return;
     savePersistedState({
       onboardingComplete: screen === "main",
       prefs,
@@ -631,6 +645,83 @@ export default function App() {
     document.head.appendChild(link);
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      setSession(data.session ?? null);
+      setAuthReady(true);
+      setScreen(
+        data.session
+          ? initialPersisted?.onboardingComplete
+            ? "main"
+            : "onboarding"
+          : "welcome",
+      );
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!mounted) return;
+      setSession(nextSession ?? null);
+      setAuthBusy(false);
+      setAuthReady(true);
+      setScreen(
+        nextSession
+          ? initialPersisted?.onboardingComplete
+            ? "main"
+            : "onboarding"
+          : "welcome",
+      );
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setAuthBusy(true);
+      await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: window.location.origin,
+        },
+      });
+    } catch (error) {
+      console.error("Google sign-in failed", error);
+      setAuthBusy(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await supabase.auth.signOut();
+      setScreen("welcome");
+      setTab("discover");
+      setDetailExp(null);
+    } catch (error) {
+      console.error("Sign out failed", error);
+    }
+  };
+
+  if (!authReady) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+        background: C.parchment, color: C.text, fontFamily: "'DM Sans', sans-serif" }}>
+        Loading Drift...
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <WelcomeScreen onContinueWithGoogle={handleGoogleSignIn} authBusy={authBusy} />;
+  }
+
   if (screen === "onboarding") {
     return <OnboardingScreen onComplete={handleOnboardingComplete} />;
   }
@@ -644,6 +735,7 @@ export default function App() {
           setTab(t);
           setDetailExp(null);
         }}
+        onSignOut={handleSignOut}
         savedCount={savedIds.length}
         maxTravelLabel={prefs.distance || DEFAULT_PREFS.distance}
       />
