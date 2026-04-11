@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { C } from "../theme/palette.js";
 import { CardImage } from "./CardImage.jsx";
 import { SectionLabel, Tag, ConditionBadge } from "./ui.jsx";
@@ -80,6 +80,38 @@ export function SwipeView({
     if (Math.abs(dragX) > 100) handleSwipe(dragX > 0 ? "right" : "left");
     else setDragX(0);
   };
+
+  useEffect(() => {
+    if (!current) return undefined;
+
+    function handleKeyDown(event) {
+      const target = event.target;
+      const isTypingTarget =
+        target instanceof HTMLElement &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable);
+
+      if (isTypingTarget || event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        handleSwipe("left");
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        handleSwipe("right");
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        onViewDetail(current);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [current, handleSwipe, onViewDetail]);
 
   if (!current) {
     return (
@@ -417,7 +449,7 @@ export function SwipeView({
             <SwipeButton icon="♥" borderColor={C.green} onClick={() => handleSwipe("right")} />
           </div>
           <p style={{ fontSize: 11, color: C.textSoft, marginTop: 10, letterSpacing: 0.5 }}>
-            drag · or click · drag right to save
+            drag or click · ← skip · → save · ↑ details
           </p>
         </div>
 
