@@ -1,16 +1,31 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { C } from "./theme/palette.js";
 import rawExperiencesMidwest from "./data/experiences.json";
 import { normalizeExperiences } from "./data/normalizeExperiences.js";
 import { SectionLabel, Tag, ConditionBadge } from "./components/ui.jsx";
 import { CardImage } from "./components/CardImage.jsx";
 import { SwipeView } from "./components/SwipeView.jsx";
+import { buildDiscoverDeck, mergePrefs, DEFAULT_PREFS } from "./lib/discoverDeck.js";
+import { loadPersistedState, savePersistedState } from "./lib/persistence.js";
 
 // ─── Google Fonts ─────────────────────────────────────────────────────────────
 // Libre Baskerville (serif headings) + DM Sans (body) — loaded in root useEffect
 
 // Midwest MVP seed data — swap for API later; normalize adds condition fields
 const EXPERIENCES = normalizeExperiences(rawExperiencesMidwest);
+
+const initialPersisted =
+  typeof window !== "undefined" ? loadPersistedState() : null;
+
+function formatPrefsSummary(prefs) {
+  const vibeLabels = (prefs.vibes || [])
+    .map((id) => CATEGORIES.find((c) => c.id === id)?.label)
+    .filter(Boolean);
+  const vibesText = vibeLabels.length ? vibeLabels.join(" · ") : "All activities";
+  const bits = [vibesText, `Within ${prefs.distance || "30 min"}`];
+  if (prefs.kidFriendly) bits.push("Kid-friendly");
+  return bits.join(" · ");
+}
 
 const CATEGORIES = [
   { id: "hiking",     label: "Hiking",     icon: "🥾" },
@@ -74,7 +89,7 @@ const ToggleSwitch = ({ on }) => (
 
 // ─── Top Navigation ───────────────────────────────────────────────────────────
 
-function TopNav({ tab, onTab, savedCount = 0 }) {
+function TopNav({ tab, onTab, savedCount = 0, maxTravelLabel = "30 min" }) {
   return (
     <header style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 50, height: 56,
       background: "rgba(250,249,246,0.92)", backdropFilter: "blur(8px)",
@@ -87,7 +102,7 @@ function TopNav({ tab, onTab, savedCount = 0 }) {
       <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px",
         borderRadius: 10, background: "#fff", border: `1px solid ${C.border}`,
         fontSize: 13, color: C.textMid }}>
-        <span style={{ color: C.green }}>●</span> Madison, WI · 30 min
+        <span style={{ color: C.green }}>●</span> Madison, WI · {maxTravelLabel} max
       </div>
 
       <nav style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
@@ -555,36 +570,83 @@ function CollectionsView({ savedIds, experiences, onViewDetail }) {
 // ─── Root App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [screen,     setScreen]     = useState("onboarding"); // "onboarding" | "main"
-  const [tab,        setTab]        = useState("discover");   // "discover" | "saved"
-  const [savedIds,   setSavedIds]   = useState([]);
-  const [skippedIds, setSkippedIds] = useState([]);
-  const [detailExp,  setDetailExp]  = useState(null);
+  const [screen, setScreen] = useState(() =>
+    initialPersisted?.onboardingComplete ? "main" : "onboarding",
+  );
+  const [prefs, setPrefs] = useState(() => mergePrefs(initialPersisted?.prefs));
+  const [tab, setTab] = useState("discover");
+  const [savedIds, setSavedIds] = useState(() => initialPersisted?.savedIds ?? []);
+  const [skippedIds, setSkippedIds] = useState(() => initialPersisted?.skippedIds ?? []);
+  const [detailExp, setDetailExp] = useState(null);
 
-  // Experiences not yet actioned in the swipe view
-  const filteredExperiences = EXPERIENCES.filter(e => !skippedIds.includes(e.id));
+  const removedFromDiscover = useMemo(
+    () => [...new Set([...skippedIds, ...savedIds])],
+    [skippedIds, savedIds],
+  );
 
-  const handleSave   = (id)  => setSavedIds(s   => s.includes(id)  ? s : [...s, id]);
-  const handleSkip   = (id)  => setSkippedIds(s => s.includes(id)  ? s : [...s, id]);
-  const handleDetail = (exp) => setDetailExp(exp);
-  const handleBack   = ()    => setDetailExp(null);
+  const discoverDeck = useMemo(
+    () => buildDiscoverDeck(EXPERIENCES, prefs, removedFromDiscover),
+    [prefs, removedFromDiscover],
+  );
+
+  const prefsSummary = useMemo(() => formatPrefsSummary(prefs), [prefs]);
+
+  const sessionReviewed = skippedIds.length + savedIds.length;
+
+  const handleOnboardingComplete = useCallback((nextPrefs) => {
+    setPrefs(mergePrefs(nextPrefs));
+    setScreen("main");
+  }, []);
+
+  const handleSave = useCallback((id) => {
+    setSavedIds((s) => (s.includes(id) ? s : [...s, id]));
+  }, []);
+
+  const handleSkip = useCallback((id) => {
+    setSkippedIds((s) => (s.includes(id) ? s : [...s, id]));
+  }, []);
+
+  const handleDetail = useCallback((exp) => {
+    setDetailExp(exp);
+  }, []);
+
+  const handleBack = useCallback(() => {
+    setDetailExp(null);
+  }, []);
+
+  useEffect(() => {
+    savePersistedState({
+      onboardingComplete: screen === "main",
+      prefs,
+      savedIds,
+      skippedIds,
+    });
+  }, [screen, prefs, savedIds, skippedIds]);
 
   // Load Google Fonts
   useEffect(() => {
     const link = document.createElement("link");
     link.href = "https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@400;500&display=swap";
-    link.rel  = "stylesheet";
+    link.rel = "stylesheet";
     document.head.appendChild(link);
   }, []);
 
   if (screen === "onboarding") {
-    return <OnboardingScreen onComplete={() => setScreen("main")} />;
+    return <OnboardingScreen onComplete={handleOnboardingComplete} />;
   }
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column",
       background: C.parchment, fontFamily: "'DM Sans', sans-serif", overflow: "hidden" }}>
-      <TopNav tab={tab} onTab={(t) => { setTab(t); setDetailExp(null); }} savedCount={savedIds.length} />
+      <TopNav
+        tab={tab}
+        onTab={(t) => {
+          setTab(t);
+          setDetailExp(null);
+        }}
+        savedCount={savedIds.length}
+        maxTravelLabel={prefs.distance || DEFAULT_PREFS.distance}
+      />
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column",
         overflow: "hidden", marginTop: 56 }}>
@@ -597,10 +659,15 @@ export default function App() {
           />
         ) : tab === "discover" ? (
           <SwipeView
-            experiences={filteredExperiences}
+            experiences={discoverDeck}
             onViewDetail={handleDetail}
             onSave={handleSave}
             onSkip={handleSkip}
+            prefsSummary={prefsSummary}
+            sessionStats={{
+              reviewed: sessionReviewed,
+              remaining: discoverDeck.length,
+            }}
           />
         ) : (
           <CollectionsView
