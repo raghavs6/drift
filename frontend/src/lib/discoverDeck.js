@@ -1,5 +1,8 @@
+import { DEFAULT_LOCATION, getStateFromLocation } from "./appConstants.js";
+
 /** Default prefs when none stored (matches onboarding defaults). */
 export const DEFAULT_PREFS = {
+  location: DEFAULT_LOCATION,
   distance: "30 min",
   age: "25–34",
   kidFriendly: false,
@@ -55,6 +58,10 @@ function difficultyAllowed(difficulty, comfort) {
   return true;
 }
 
+function sameState(locationA, locationB) {
+  return getStateFromLocation(locationA) !== "" && getStateFromLocation(locationA) === getStateFromLocation(locationB);
+}
+
 function scoreExperience(exp, prefs) {
   let score = exp.conditionScore * 20;
   if (prefs.vibes?.length) {
@@ -62,6 +69,8 @@ function scoreExperience(exp, prefs) {
   } else {
     score += 15;
   }
+  if (exp.location === prefs.location) score += 40;
+  else if (sameState(exp.location, prefs.location)) score += 18;
   if (prefs.kidFriendly && exp.kidFriendly) score += 25;
   if (difficultyAllowed(exp.difficulty, prefs.comfort)) score += 10;
   return score;
@@ -82,9 +91,11 @@ export function buildDiscoverDeck(experiences, prefs, removedIds) {
   if (pool.length === 0) return [];
 
   const maxMin = MAX_TRAVEL_MINUTES[prefs.distance] ?? 120;
+  const selectedLocation = prefs.location || DEFAULT_LOCATION;
 
-  function applyFilters(relaxCategoryComfort) {
+  function applyFilters(relaxCategoryComfort, relaxLocation) {
     return pool.filter((e) => {
+      if (!relaxLocation && !sameState(e.location, selectedLocation)) return false;
       if (parseTravelMinutes(e.distance) > maxMin) return false;
       if (prefs.kidFriendly && !e.kidFriendly) return false;
       if (!relaxCategoryComfort) {
@@ -95,8 +106,10 @@ export function buildDiscoverDeck(experiences, prefs, removedIds) {
     });
   }
 
-  let filtered = applyFilters(false);
-  if (filtered.length === 0) filtered = applyFilters(true);
+  let filtered = applyFilters(false, false);
+  if (filtered.length === 0) filtered = applyFilters(true, false);
+  if (filtered.length === 0) filtered = applyFilters(false, true);
+  if (filtered.length === 0) filtered = applyFilters(true, true);
   if (filtered.length === 0) filtered = [...pool];
 
   const sorted = [...filtered].sort((a, b) => {

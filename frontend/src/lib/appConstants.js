@@ -1,3 +1,5 @@
+import rawExperiences from "../data/experiences.json";
+
 export const CATEGORIES = [
   { id: "hiking", label: "Hiking", icon: "🥾" },
   { id: "water", label: "Water", icon: "🛶" },
@@ -19,3 +21,16 @@ export const COMFORT = [
   { label: "Moderate", desc: "Some elevation, moderate effort" },
   { label: "Adventurous", desc: "Challenging terrain, higher effort" },
 ];
+
+export const DEFAULT_LOCATION = "Madison, WI";
+
+export function getStateFromLocation(locationLabel = "") {
+  return locationLabel.split(",").map((part) => part.trim()).filter(Boolean).at(-1) || "";
+}
+
+export const LOCATION_OPTIONS = [...new Set(rawExperiences.map((experience) => experience.location))]
+  .sort((a, b) => {
+    const stateCompare = getStateFromLocation(a).localeCompare(getStateFromLocation(b));
+    if (stateCompare !== 0) return stateCompare;
+    return a.localeCompare(b);
+  });

@@ -6,6 +6,7 @@ export function TopNav({
   onSignOut,
   showAuthActions = false,
   savedCount = 0,
+  locationLabel = "Madison, WI",
   maxTravelLabel = "30 min",
 }) {
   return (
@@ -51,7 +52,7 @@ export function TopNav({
           color: C.textMid,
         }}
       >
-        <span style={{ color: C.green }}>●</span> Madison, WI · {maxTravelLabel} max
+        <span style={{ color: C.green }}>●</span> {locationLabel} · {maxTravelLabel} max
       </div>
 
       <nav style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>

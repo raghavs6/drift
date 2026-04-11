@@ -39,6 +39,7 @@ export function SwipeView({
   onViewDetail,
   onSave,
   onSkip,
+  locationLabel = "Madison, WI",
   prefsSummary,
   sessionStats,
 }) {
@@ -167,7 +168,7 @@ export function SwipeView({
         }}
       >
         <span>
-          ☀ {perfectCount} experiences are <strong>perfect</strong> for right now near Madison · 68°F, clear
+          ☀ {perfectCount} experiences are <strong>perfect</strong> for right now near {locationLabel} · 68°F, clear
         </span>
         {prefsSummary ? (
           <span style={{ fontSize: 12, fontWeight: 400, color: C.textMid, maxWidth: "100%" }}>

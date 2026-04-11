@@ -7,7 +7,7 @@ import { TopNav } from "./components/TopNav.jsx";
 import { OnboardingScreen } from "./components/OnboardingScreen.jsx";
 import { DetailView } from "./components/DetailView.jsx";
 import { CollectionsView } from "./components/CollectionsView.jsx";
-import { CATEGORIES } from "./lib/appConstants.js";
+import { CATEGORIES, DEFAULT_LOCATION } from "./lib/appConstants.js";
 import { buildDiscoverDeck, mergePrefs, DEFAULT_PREFS } from "./lib/discoverDeck.js";
 import { loadPersistedState, savePersistedState } from "./lib/persistence.js";
 import { supabase, hasSupabaseConfig } from "./supabase.js";
@@ -361,6 +361,7 @@ export default function App() {
         onSignOut={handleSignOut}
         showAuthActions={hasSupabaseConfig}
         savedCount={savedIds.length}
+        locationLabel={prefs.location || DEFAULT_LOCATION}
         maxTravelLabel={prefs.distance || DEFAULT_PREFS.distance}
       />
 
@@ -381,6 +382,7 @@ export default function App() {
             onViewDetail={handleDetail}
             onSave={handleSave}
             onSkip={handleSkip}
+            locationLabel={prefs.location || DEFAULT_LOCATION}
             prefsSummary={prefsSummary}
             sessionStats={{
               reviewed: sessionReviewed,

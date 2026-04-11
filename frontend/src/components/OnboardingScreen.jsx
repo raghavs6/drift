@@ -1,7 +1,14 @@
 import { useState } from "react";
 import { C } from "../theme/palette.js";
 import { SectionLabel } from "./ui.jsx";
-import { CATEGORIES, DISTANCES, AGES, COMFORT } from "../lib/appConstants.js";
+import {
+  CATEGORIES,
+  DISTANCES,
+  AGES,
+  COMFORT,
+  DEFAULT_LOCATION,
+  LOCATION_OPTIONS,
+} from "../lib/appConstants.js";
 
 const TreeLine = ({ style }) => (
   <svg viewBox="0 0 400 60" style={{ width: "100%", height: 60, ...style }}>
@@ -73,6 +80,7 @@ const ToggleSwitch = ({ on }) => (
 export function OnboardingScreen({ onComplete }) {
   const [step, setStep] = useState(0);
   const [prefs, setPrefs] = useState({
+    location: DEFAULT_LOCATION,
     distance: "30 min",
     age: "25–34",
     kidFriendly: false,
@@ -168,34 +176,39 @@ export function OnboardingScreen({ onComplete }) {
                 We'll find experiences nearby and filter by how far you'll travel.
               </p>
               <SectionLabel>Your location</SectionLabel>
-              <div style={{ display: "flex", gap: 10, marginBottom: 28 }}>
-                <div
+              <div
+                style={{
+                  marginBottom: 28,
+                  background: "#fff",
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 14,
+                  padding: "14px 18px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <span style={{ color: C.green }}>●</span>
+                  <span style={{ fontSize: 14, color: C.text }}>Choose a seeded city from the current demo data</span>
+                </div>
+                <select
+                  value={prefs.location}
+                  onChange={(event) => setPrefs((current) => ({ ...current, location: event.target.value }))}
                   style={{
-                    flex: 1,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    background: "#fff",
+                    width: "100%",
+                    padding: "12px 14px",
+                    borderRadius: 12,
                     border: `1px solid ${C.border}`,
-                    borderRadius: 14,
-                    padding: "14px 18px",
+                    background: C.parchment,
+                    color: C.text,
+                    fontSize: 14,
+                    fontFamily: "'DM Sans', sans-serif",
                   }}
                 >
-                  <span style={{ color: C.green }}>●</span>
-                  <span style={{ fontSize: 14, color: C.text }}>Madison, WI</span>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: C.textSoft,
-                      background: C.tanLight,
-                      padding: "2px 8px",
-                      borderRadius: 6,
-                      marginLeft: "auto",
-                    }}
-                  >
-                    detected
-                  </span>
-                </div>
+                  {LOCATION_OPTIONS.map((location) => (
+                    <option key={location} value={location}>
+                      {location}
+                    </option>
+                  ))}
+                </select>
               </div>
               <SectionLabel>Max travel distance</SectionLabel>
               <ChipRow options={DISTANCES} selected={prefs.distance} onSelect={(value) => setPrefs((p) => ({ ...p, distance: value }))} />
