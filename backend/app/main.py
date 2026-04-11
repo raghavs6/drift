@@ -1,7 +1,9 @@
 import os
+import time
+from collections import defaultdict
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import anthropic
@@ -26,6 +28,25 @@ app.add_middleware(
 )
 
 
+RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "5"))
+RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+
+_request_log: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_rate_limit(client_ip: str) -> None:
+    now = time.time()
+    window_start = now - RATE_LIMIT_WINDOW_SECONDS
+    timestamps = _request_log[client_ip]
+    _request_log[client_ip] = [t for t in timestamps if t > window_start]
+    if len(_request_log[client_ip]) >= RATE_LIMIT_MAX_REQUESTS:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded. Try again in {RATE_LIMIT_WINDOW_SECONDS}s.",
+        )
+    _request_log[client_ip].append(now)
+
+
 class TripPlanRequest(BaseModel):
     title: str
     category: str | None = None
@@ -48,7 +69,8 @@ def list_experiences() -> dict[str, list]:
 
 
 @app.post("/api/plan-trip")
-async def plan_trip(req: TripPlanRequest):
+async def plan_trip(req: TripPlanRequest, request: Request):
+    _check_rate_limit(request.client.host)
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
