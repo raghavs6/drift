@@ -18,6 +18,63 @@ const EXPERIENCES = normalizeExperiences(rawExperiencesMidwest);
 const initialPersisted =
   typeof window !== "undefined" ? loadPersistedState() : null;
 
+const DEFAULT_COLLECTIONS = [
+  { id: "saved", label: "Saved", icon: "💚", itemIds: [] },
+  { id: "bucket", label: "Bucket List", icon: "⭐", itemIds: [] },
+];
+
+function sanitizeItemIds(ids) {
+  return Array.isArray(ids) ? [...new Set(ids.filter(Boolean))] : [];
+}
+
+function normalizeCollections(rawCollections, legacySavedIds = []) {
+  const legacySaved = sanitizeItemIds(legacySavedIds);
+  const baseCollections = DEFAULT_COLLECTIONS.map((collection) => ({
+    ...collection,
+    itemIds: collection.id === "saved" ? legacySaved : [],
+  }));
+
+  if (!Array.isArray(rawCollections)) {
+    return baseCollections;
+  }
+
+  const byId = new Map(baseCollections.map((collection) => [collection.id, collection]));
+
+  rawCollections.forEach((collection) => {
+    if (!collection || typeof collection !== "object" || !collection.id || !collection.label) {
+      return;
+    }
+
+    const normalized = {
+      id: collection.id,
+      label: collection.label,
+      icon: collection.icon || "🗂️",
+      itemIds: sanitizeItemIds(collection.itemIds),
+    };
+
+    if (normalized.id === "saved") {
+      normalized.icon = "💚";
+      normalized.label = "Saved";
+      normalized.itemIds = [...new Set([...legacySaved, ...normalized.itemIds])];
+    } else if (normalized.id === "bucket") {
+      normalized.icon = "⭐";
+      normalized.label = "Bucket List";
+    }
+
+    byId.set(normalized.id, normalized);
+  });
+
+  return [
+    byId.get("saved"),
+    byId.get("bucket"),
+    ...[...byId.values()].filter((collection) => !["saved", "bucket"].includes(collection.id)),
+  ];
+}
+
+function makeCollectionId(name) {
+  return `collection-${name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "custom"}-${Date.now()}`;
+}
+
 function formatPrefsSummary(prefs) {
   const vibeLabels = (prefs.vibes || [])
     .map((id) => CATEGORIES.find((category) => category.id === id)?.label)
@@ -57,9 +114,16 @@ export default function App() {
   );
   const [tab, setTab] = useState("discover");
   const [prefs, setPrefs] = useState(() => mergePrefs(initialPersisted?.prefs));
-  const [savedIds, setSavedIds] = useState(() => initialPersisted?.savedIds ?? []);
+  const [collections, setCollections] = useState(() =>
+    normalizeCollections(initialPersisted?.collections, initialPersisted?.savedIds),
+  );
   const [skippedIds, setSkippedIds] = useState(() => initialPersisted?.skippedIds ?? []);
   const [detailExp, setDetailExp] = useState(null);
+
+  const savedIds = useMemo(
+    () => collections.find((collection) => collection.id === "saved")?.itemIds ?? [],
+    [collections],
+  );
 
   const removedFromDiscover = useMemo(
     () => [...new Set([...skippedIds, ...savedIds])],
@@ -80,11 +144,84 @@ export default function App() {
   }, []);
 
   const handleSave = useCallback((id) => {
-    setSavedIds((current) => (current.includes(id) ? current : [...current, id]));
+    setCollections((current) =>
+      current.map((collection) =>
+        collection.id === "saved"
+          ? {
+              ...collection,
+              itemIds: collection.itemIds.includes(id) ? collection.itemIds : [...collection.itemIds, id],
+            }
+          : collection,
+      ),
+    );
   }, []);
 
   const handleSkip = useCallback((id) => {
     setSkippedIds((current) => (current.includes(id) ? current : [...current, id]));
+  }, []);
+
+  const handleCreateCollection = useCallback((label) => {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+
+    setCollections((current) => {
+      if (current.some((collection) => collection.label.toLowerCase() === trimmed.toLowerCase())) {
+        return current;
+      }
+
+      return [
+        ...current,
+        {
+          id: makeCollectionId(trimmed),
+          label: trimmed,
+          icon: "🗂️",
+          itemIds: [],
+        },
+      ];
+    });
+  }, []);
+
+  const handleAddToCollection = useCallback((collectionId, experienceId) => {
+    setCollections((current) =>
+      current.map((collection) =>
+        collection.id === collectionId
+          ? {
+              ...collection,
+              itemIds: collection.itemIds.includes(experienceId)
+                ? collection.itemIds
+                : [...collection.itemIds, experienceId],
+            }
+          : collection,
+      ),
+    );
+  }, []);
+
+  const handleRemoveFromCollection = useCallback((collectionId, experienceId) => {
+    setCollections((current) =>
+      current
+        .map((collection) => {
+          if (collectionId === "saved") {
+            return {
+              ...collection,
+              itemIds: collection.itemIds.filter((id) => id !== experienceId),
+            };
+          }
+
+          if (collection.id !== collectionId) {
+            return collection;
+          }
+
+          return {
+            ...collection,
+            itemIds: collection.itemIds.filter((id) => id !== experienceId),
+          };
+        }),
+    );
+  }, []);
+
+  const handleDeleteCollection = useCallback((collectionId) => {
+    if (["saved", "bucket"].includes(collectionId)) return;
+    setCollections((current) => current.filter((collection) => collection.id !== collectionId));
   }, []);
 
   const handleDetail = useCallback((experience) => {
@@ -100,10 +237,11 @@ export default function App() {
     savePersistedState({
       onboardingComplete: screen === "main",
       prefs,
+      collections,
       savedIds,
       skippedIds,
     });
-  }, [screen, prefs, savedIds, skippedIds]);
+  }, [screen, prefs, collections, savedIds, skippedIds]);
 
   useEffect(() => {
     const link = document.createElement("link");
@@ -241,9 +379,13 @@ export default function App() {
           />
         ) : (
           <CollectionsView
-            savedIds={savedIds}
+            collections={collections}
             experiences={EXPERIENCES}
             onViewDetail={handleDetail}
+            onCreateCollection={handleCreateCollection}
+            onAddToCollection={handleAddToCollection}
+            onRemoveFromCollection={handleRemoveFromCollection}
+            onDeleteCollection={handleDeleteCollection}
           />
         )}
       </div>
