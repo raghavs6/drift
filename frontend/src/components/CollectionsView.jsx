@@ -5,17 +5,105 @@ import { CardImage } from "./CardImage.jsx";
 import { formatInsightLine, getCollectionSummary, getWhyForYou, getWhyNow } from "../lib/insights.js";
 import { Drifty } from "./Drifty.jsx";
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+
+function parseTravelMinutes(label = "") {
+  const text = String(label).toLowerCase();
+  const minMatch = text.match(/(\d+)\s*min/);
+  if (minMatch) return parseInt(minMatch[1], 10);
+  const hrMatch = text.match(/(\d+(?:\.\d+)?)\s*hr/);
+  if (hrMatch) return Math.round(parseFloat(hrMatch[1]) * 60);
+  if (text.includes("half day")) return 300;
+  return 9999;
+}
+
+function getCollectionStats(items) {
+  const categoryCounts = new Map();
+  let kidCount = 0;
+  let perfectCount = 0;
+  let shortestDrive = null;
+
+  items.forEach((item) => {
+    categoryCounts.set(item.categoryLabel, (categoryCounts.get(item.categoryLabel) || 0) + 1);
+    if (item.kidFriendly) kidCount += 1;
+    if (item.conditionType === "perfect") perfectCount += 1;
+    const drive = parseTravelMinutes(item.distance);
+    if (shortestDrive === null || drive < shortestDrive) shortestDrive = drive;
+  });
+
+  const topCategory = [...categoryCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "Mixed";
+
+  return {
+    topCategory,
+    kidCount,
+    perfectCount,
+    shortestDrive: shortestDrive === null || shortestDrive === 9999 ? "--" : `${shortestDrive} min`,
+  };
+}
+
+function sortCollectionItems(items, sortMode) {
+  const sorted = [...items];
+  if (sortMode === "closest") {
+    sorted.sort((a, b) => parseTravelMinutes(a.distance) - parseTravelMinutes(b.distance));
+  } else if (sortMode === "easy") {
+    const order = { Easy: 0, Moderate: 1, Hard: 2 };
+    sorted.sort((a, b) => (order[a.difficulty] ?? 9) - (order[b.difficulty] ?? 9));
+  } else if (sortMode === "weather") {
+    sorted.sort((a, b) => (b.conditionScore ?? 0) - (a.conditionScore ?? 0));
+  } else {
+    sorted.sort((a, b) => (b.conditionScore ?? 0) - (a.conditionScore ?? 0));
+  }
+  return sorted;
+}
+
+function filterCollectionItems(items, filterMode) {
+  if (filterMode === "kid") return items.filter((item) => item.kidFriendly);
+  if (filterMode === "perfect") return items.filter((item) => item.conditionType === "perfect");
+  return items;
+}
+
+function buildFallbackPlan(experience) {
+  const bring = (experience.whatToBring || []).slice(0, 6).join(", ");
+  const bestTime =
+    experience.conditionType === "perfect"
+      ? "Go early or near golden hour while conditions are especially favorable."
+      : experience.conditionType === "great"
+      ? "Aim for the easiest weather window today or this weekend."
+      : "Treat this as a flexible backup option and check conditions before you go.";
+
+  return [
+    "1. Best time to go",
+    bestTime,
+    "",
+    "2. What to bring",
+    `Bring: ${bring || "Water, layers, snacks, and a charged phone."}`,
+    "",
+    "3. Getting there",
+    `Plan around roughly ${experience.distance} of travel to ${experience.location}. Give yourself a little buffer for parking, walking in, and settling into the spot.`,
+    "",
+    "4. Itinerary",
+    `Start with the main experience window for ${experience.time.toLowerCase()}.`,
+    `Build around the core draw: ${experience.hook}`,
+    "Leave margin for a slower finish, photos, and a flexible stop on the way back.",
+    "",
+    "5. Pro tips",
+    `This is a ${experience.difficulty.toLowerCase()} effort outing, so pace the day around that.`,
+    `If you're deciding between options, this one is strongest in ${experience.season.toLowerCase()}.`,
+    "Keep the plan light and let the best part of the place carry the day.",
+  ].join("\n");
+}
 
 function TripPlanModal({ experience, onClose }) {
   const [plan, setPlan] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [usingFallback, setUsingFallback] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setUsingFallback(false);
 
     fetch(`${API_BASE}/api/plan-trip`, {
       method: "POST",
@@ -32,14 +120,18 @@ function TripPlanModal({ experience, onClose }) {
       }),
     })
       .then((res) => {
-        if (!res.ok) throw new Error("Failed to plan trip");
+        if (!res.ok) throw new Error(`Trip planner returned ${res.status}`);
         return res.json();
       })
       .then((data) => {
         if (!cancelled) setPlan(data.plan);
       })
       .catch((err) => {
-        if (!cancelled) setError(err.message);
+        if (!cancelled) {
+          setPlan(buildFallbackPlan(experience));
+          setUsingFallback(true);
+          setError(err.message);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -145,13 +237,31 @@ function TripPlanModal({ experience, onClose }) {
                 Planning your adventure...
               </p>
             </div>
-          ) : error ? (
-            <div style={{ textAlign: "center", padding: "48px 20px" }}>
-              <p style={{ fontSize: 14, color: "#c0392b", marginBottom: 12 }}>Could not generate a plan right now.</p>
-              <p style={{ fontSize: 12, color: C.textSoft }}>{error}</p>
-            </div>
           ) : (
-            <div>{formatPlan(plan)}</div>
+            <div>
+              {usingFallback ? (
+                <div
+                  style={{
+                    marginBottom: 16,
+                    padding: "12px 14px",
+                    borderRadius: 14,
+                    background: "rgba(245,240,230,0.84)",
+                    border: `1px solid ${C.borderLight}`,
+                  }}
+                >
+                  <div style={{ fontSize: 11, color: C.textSoft, textTransform: "uppercase", letterSpacing: 1.1, marginBottom: 4 }}>
+                    Local backup plan
+                  </div>
+                  <div style={{ fontSize: 12, color: C.textMid, lineHeight: 1.6 }}>
+                    Live trip-planner service was unavailable, so Drifty put together a local fallback plan instead.
+                  </div>
+                  <div style={{ marginTop: 6, fontSize: 11, color: C.textSoft }}>
+                    You can still use this plan as a strong starting point for the outing.
+                  </div>
+                </div>
+              ) : null}
+              <div>{formatPlan(plan)}</div>
+            </div>
           )}
         </div>
       </div>
@@ -469,6 +579,8 @@ export function CollectionsView({
   const [draftName, setDraftName] = useState("");
   const [compareIds, setCompareIds] = useState([]);
   const [planningExp, setPlanningExp] = useState(null);
+  const [sortMode, setSortMode] = useState("best");
+  const [filterMode, setFilterMode] = useState("all");
 
   useEffect(() => {
     if (!collections.some((collection) => collection.id === activeCol)) {
@@ -498,9 +610,18 @@ export function CollectionsView({
     () => getCollectionSummary(selectedCollection, selectedItems),
     [selectedCollection, selectedItems],
   );
+  const collectionStats = useMemo(() => getCollectionStats(selectedItems), [selectedItems]);
+  const displayedItems = useMemo(
+    () => sortCollectionItems(filterCollectionItems(selectedItems, filterMode), sortMode),
+    [selectedItems, filterMode, sortMode],
+  );
+  const featuredItems = displayedItems.slice(0, 3);
   const compareItems = compareIds.map((id) => experiencesById.get(id)).filter(Boolean);
   const compareMode = compareIds.length > 0;
   const driftyComparePick = compareItems[0] ?? null;
+  const driftyBoardNote = displayedItems.length
+    ? `This board leans ${collectionStats.topCategory.toLowerCase()} right now. I’d start with the strongest-condition card, then compare against the closest backup.`
+    : "Once you save a few picks, I’ll help you read the board and spot the strongest tradeoffs.";
 
   const handleCreateSubmit = () => {
     const trimmed = draftName.trim();
@@ -524,6 +645,19 @@ export function CollectionsView({
   useEffect(() => {
     setCompareIds((current) => current.filter((id) => selectedCollection?.itemIds.includes(id)));
   }, [selectedCollection]);
+
+  useEffect(() => {
+    if (!selectedItems.length) {
+      setFilterMode("all");
+      return;
+    }
+    if (filterMode === "kid" && !selectedItems.some((item) => item.kidFriendly)) {
+      setFilterMode("all");
+    }
+    if (filterMode === "perfect" && !selectedItems.some((item) => item.conditionType === "perfect")) {
+      setFilterMode("all");
+    }
+  }, [selectedItems, filterMode]);
 
   const toggleCompare = (experienceId) => {
     setCompareIds((current) => {
@@ -825,8 +959,8 @@ export function CollectionsView({
             boxShadow: "0 18px 44px rgba(61,107,78,0.08)",
           }}
         >
-          <div style={{ display: "grid", gridTemplateColumns: "1.05fr 1.35fr", minHeight: 250 }}>
-            <div style={{ minHeight: 250 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1.05fr 1.05fr 0.9fr", minHeight: 290 }}>
+            <div style={{ minHeight: 290 }}>
               {collectionSummary.cover ? (
                 <CardImage experience={collectionSummary.cover} style={{ height: "100%" }} />
               ) : (
@@ -841,29 +975,145 @@ export function CollectionsView({
             </div>
             <div
               style={{
-                padding: "26px 28px",
+                padding: "28px 28px 24px",
                 display: "flex",
                 flexDirection: "column",
                 justifyContent: "space-between",
                 background: "linear-gradient(180deg, rgba(250,249,246,0.98), rgba(245,240,230,0.74))",
+                borderLeft: `1px solid ${C.borderLight}`,
               }}
             >
               <div>
                 <div style={{ fontSize: 11, color: C.textSoft, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 10 }}>
                   {collectionSummary.eyebrow}
                 </div>
-                <h3 style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 28, lineHeight: 1.15, color: C.text, margin: "0 0 12px" }}>
+                <h3 style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 30, lineHeight: 1.12, color: C.text, margin: "0 0 12px" }}>
                   {collectionSummary.title}
                 </h3>
-                <p style={{ fontSize: 14, color: C.textMid, lineHeight: 1.75, margin: 0 }}>
+                <p style={{ fontSize: 14, color: C.textMid, lineHeight: 1.75, margin: "0 0 18px" }}>
                   {collectionSummary.blurb}
                 </p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+                  {[
+                    { label: "Lead vibe", value: collectionStats.topCategory },
+                    { label: "Closest pick", value: collectionStats.shortestDrive },
+                    { label: "Perfect now", value: `${collectionStats.perfectCount}` },
+                    { label: "Kid-ready", value: `${collectionStats.kidCount}` },
+                  ].map((stat) => (
+                    <div key={stat.label} style={{ padding: "12px 14px", borderRadius: 16, background: "rgba(255,255,255,0.76)", border: `1px solid ${C.borderLight}` }}>
+                      <div style={{ fontSize: 11, color: C.textSoft, textTransform: "uppercase", letterSpacing: 1.1, marginBottom: 6 }}>
+                        {stat.label}
+                      </div>
+                      <div style={{ fontSize: 16, color: C.text, fontWeight: 700 }}>
+                        {stat.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 20 }}>
                 <Tag bg={C.greenLight} color={C.green}>{collectionSummary.mood}</Tag>
                 <Tag bg={C.tanLight} color={C.tan}>{collectionSummary.season}</Tag>
                 <Tag bg="#EDE8DC" color="#6B6050">{collectionSummary.pace}</Tag>
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: "24px 22px",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                background: "rgba(255,255,255,0.92)",
+                borderLeft: `1px solid ${C.borderLight}`,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+                <div
+                  style={{
+                    width: 68,
+                    height: 68,
+                    borderRadius: 18,
+                    background: "linear-gradient(180deg, rgba(232,240,229,0.96), rgba(245,240,230,0.96))",
+                    border: `1px solid ${C.borderLight}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Drifty size={50} pose="clipboard" />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: C.textSoft, textTransform: "uppercase", letterSpacing: 1.1, marginBottom: 4 }}>
+                    Drifty's Read
+                  </div>
+                  <div style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 18, color: C.text }}>
+                    Planning board status
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ padding: "14px 16px", borderRadius: 18, background: "rgba(245,240,230,0.78)", border: `1px solid ${C.borderLight}`, fontSize: 13, color: C.textMid, lineHeight: 1.7 }}>
+                {driftyBoardNote}
+              </div>
+
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 11, color: C.textSoft, textTransform: "uppercase", letterSpacing: 1.1, marginBottom: 10 }}>
+                  Board controls
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                  {[
+                    { id: "best", label: "Best match" },
+                    { id: "closest", label: "Closest" },
+                    { id: "easy", label: "Easy first" },
+                    { id: "weather", label: "Weather first" },
+                  ].map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setSortMode(option.id)}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: 999,
+                        border: `1px solid ${sortMode === option.id ? C.green : C.border}`,
+                        background: sortMode === option.id ? C.greenLight : "#fff",
+                        color: sortMode === option.id ? C.green : C.textSoft,
+                        cursor: "pointer",
+                        fontSize: 12,
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {[
+                    { id: "all", label: "All picks" },
+                    { id: "kid", label: "Kid-friendly" },
+                    { id: "perfect", label: "Perfect now" },
+                  ].map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setFilterMode(option.id)}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: 999,
+                        border: `1px solid ${filterMode === option.id ? C.green : C.border}`,
+                        background: filterMode === option.id ? C.greenLight : "#fff",
+                        color: filterMode === option.id ? C.green : C.textSoft,
+                        cursor: "pointer",
+                        fontSize: 12,
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -916,21 +1166,129 @@ export function CollectionsView({
           </div>
         ) : null}
 
-        {selectedItems.length === 0 ? (
+        {!compareMode && displayedItems.length > 0 ? (
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: 11, color: C.textSoft, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 6 }}>
+                  Featured picks
+                </div>
+                <h3 style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 24, color: C.text, margin: 0 }}>
+                  Best places to start from this board
+                </h3>
+              </div>
+              <div style={{ fontSize: 12, color: C.textSoft }}>
+                Sorted by {sortMode === "best" ? "best match" : sortMode === "closest" ? "closest first" : sortMode === "easy" ? "easy effort" : "weather window"}
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
+              {featuredItems.map((experience, index) => (
+                <div
+                  key={`featured-${experience.id}`}
+                  onClick={() => onViewDetail(experience)}
+                  style={{
+                    borderRadius: 20,
+                    overflow: "hidden",
+                    border: `1px solid ${C.borderLight}`,
+                    background: "#fff",
+                    boxShadow: "0 16px 34px rgba(61,107,78,0.08)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ height: 200, position: "relative", overflow: "hidden" }}>
+                    <CardImage experience={experience} style={{ height: 200 }} />
+                    <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(0,0,0,0.03) 0%, rgba(0,0,0,0.14) 48%, rgba(0,0,0,0.68) 100%)" }} />
+                    <div style={{ position: "absolute", top: 14, left: 14 }}>
+                      <Tag bg="rgba(255,255,255,0.82)" color={C.text}>{index === 0 ? "Best next pick" : index === 1 ? "Closest backup" : "Strong alternate"}</Tag>
+                    </div>
+                    <div style={{ position: "absolute", right: 14, top: 14 }}>
+                      <ConditionBadge type={experience.conditionType} label={experience.condition} />
+                    </div>
+                    <div style={{ position: "absolute", left: 18, right: 18, bottom: 18 }}>
+                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.75)", marginBottom: 6 }}>
+                        {experience.categoryLabel} · {experience.distance}
+                      </div>
+                      <div style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 26, lineHeight: 1.1, color: "#fff" }}>
+                        {experience.title}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ padding: "16px 18px 18px" }}>
+                    <p style={{ margin: "0 0 12px", fontSize: 13, color: C.textMid, lineHeight: 1.7 }}>
+                      {experience.hook}
+                    </p>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                      <Tag bg={C.greenLight} color={C.green}>{experience.difficulty}</Tag>
+                      <Tag bg={C.tanLight} color={C.tan}>{experience.cost}</Tag>
+                      <Tag bg="#EDE8DC" color="#6B6050">{experience.time}</Tag>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setPlanningExp(experience);
+                        }}
+                        style={{
+                          padding: "9px 12px",
+                          borderRadius: 10,
+                          border: "none",
+                          background: C.green,
+                          color: "#fff",
+                          cursor: "pointer",
+                          fontFamily: "'DM Sans', sans-serif",
+                          fontSize: 12,
+                        }}
+                      >
+                        Plan trip
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onViewDetail(experience);
+                        }}
+                        style={{
+                          padding: "9px 12px",
+                          borderRadius: 10,
+                          border: `1px solid ${C.border}`,
+                          background: "#fff",
+                          color: C.textMid,
+                          cursor: "pointer",
+                          fontFamily: "'DM Sans', sans-serif",
+                          fontSize: 12,
+                        }}
+                      >
+                        Open details
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {displayedItems.length === 0 ? (
           <div style={{ textAlign: "center", padding: "80px 40px", color: C.textSoft }}>
             <span style={{ fontSize: 40, display: "block", marginBottom: 14 }}>🌿</span>
             <p style={{ fontSize: 16, fontFamily: "'Libre Baskerville', serif" }}>
-              {selectedCollection?.id === "saved" ? "Nothing saved yet" : "This collection is empty"}
+              {selectedItems.length === 0
+                ? selectedCollection?.id === "saved" ? "Nothing saved yet" : "This collection is empty"
+                : "No picks match this filter"}
             </p>
             <p style={{ fontSize: 13, marginTop: 8 }}>
-              {selectedCollection?.id === "saved"
-                ? "Swipe right on experiences you love"
-                : "Add a few experiences from Saved to get this collection going"}
+              {selectedItems.length === 0
+                ? selectedCollection?.id === "saved"
+                  ? "Swipe right on experiences you love"
+                  : "Add a few experiences from Saved to get this collection going"
+                : "Try another board filter or sorting mode"}
             </p>
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
-            {selectedItems.map((experience) => (
+            {displayedItems.map((experience) => (
               <CollectionCard
                 key={`${selectedCollection.id}-${experience.id}`}
                 experience={experience}
