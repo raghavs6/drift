@@ -45,6 +45,26 @@ const StatCard = ({ label, value, align = "left" }) => (
   </div>
 );
 
+const EditorialNote = ({ title, body }) => (
+  <div
+    style={{
+      padding: "16px 18px",
+      borderRadius: 18,
+      background: "rgba(255,255,255,0.12)",
+      border: "1px solid rgba(255,255,255,0.14)",
+      backdropFilter: "blur(10px)",
+      maxWidth: 260,
+    }}
+  >
+    <div style={{ fontSize: 11, letterSpacing: 1.2, textTransform: "uppercase", color: "rgba(255,255,255,0.72)", marginBottom: 8 }}>
+      {title}
+    </div>
+    <div style={{ fontSize: 13, lineHeight: 1.6, color: "rgba(255,255,255,0.88)" }}>
+      {body}
+    </div>
+  </div>
+);
+
 export function WelcomeScreen({ onContinueWithGoogle, authBusy }) {
   return (
     <div className="welcome-root" style={{ minHeight: "100vh", display: "grid", gridTemplateColumns: "1.1fr 0.9fr", background: "linear-gradient(135deg, #eef5f0 0%, #f7f4ec 52%, #faf9f6 100%)" }}>
@@ -61,13 +81,13 @@ export function WelcomeScreen({ onContinueWithGoogle, authBusy }) {
 
           <div style={{ maxWidth: 520, marginTop: 24 }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 999, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.14)", marginBottom: 22, fontSize: 12, letterSpacing: 1.2, textTransform: "uppercase", color: "rgba(255,255,255,0.8)" }}>
-              Live conditions and saved trips
+              Today’s field guide
             </div>
             <h1 style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 60, lineHeight: 1.02, letterSpacing: -1.2, margin: "0 0 18px" }}>
-              Find an adventure that fits today.
+              Open the app and know what fits today.
             </h1>
             <p style={{ maxWidth: 460, margin: 0, fontSize: 17, lineHeight: 1.8, color: "rgba(235,247,241,0.82)" }}>
-              Drift blends nearby outdoor experiences, your saved tastes, and real-time conditions into one calm, swipe-first flow.
+              Drift blends nearby outdoor experiences, your saved tastes, and live conditions into one calm, swipe-first dashboard that feels more like an editor’s shortlist than a search tool.
             </p>
           </div>
 
@@ -77,9 +97,21 @@ export function WelcomeScreen({ onContinueWithGoogle, authBusy }) {
             <FeaturePill>Fast onboarding</FeaturePill>
           </div>
 
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 26 }}>
+            <EditorialNote
+              title="This morning"
+              body="Scenic drives, lakeside walks, and wildlife stops are trending because the weather window is unusually calm."
+            />
+            <EditorialNote
+              title="Why people stay"
+              body="Collections, condition-aware picks, and quick swiping remove the usual planning drag from outdoor weekends."
+            />
+          </div>
+
           <div style={{ marginTop: "auto", display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 18, flexWrap: "wrap" }}>
             <StatCard label="Perfect today" value="12 nearby ideas" />
             <StatCard label="Mood" value="Calm, warm, spontaneous" align="right" />
+            <StatCard label="Best fit" value="Short scenic wins" align="right" />
           </div>
         </div>
       </section>
@@ -91,10 +123,10 @@ export function WelcomeScreen({ onContinueWithGoogle, authBusy }) {
               Welcome Back
             </div>
             <h2 style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 42, lineHeight: 1.12, color: C.text, margin: "0 0 14px" }}>
-              Sign in to keep your adventures synced.
+              Sign in and step straight into your shortlist.
             </h2>
             <p style={{ margin: 0, fontSize: 15, lineHeight: 1.8, color: C.textSoft }}>
-              Save right swipes, build collections, and keep your outdoor profile with you across devices.
+              Save swipes, build themed collections, and keep your outdoor dashboard synced across devices.
             </p>
           </div>
 

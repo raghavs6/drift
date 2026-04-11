@@ -3,6 +3,8 @@ import { C } from "../theme/palette.js";
 export function TopNav({
   tab,
   onTab,
+  onHome,
+  onOpenPreferences,
   onSignOut,
   showAuthActions = false,
   savedCount = 0,
@@ -28,16 +30,22 @@ export function TopNav({
         fontFamily: "'DM Sans', sans-serif",
       }}
     >
-      <span
+      <button
+        type="button"
+        onClick={onHome}
         style={{
           fontFamily: "'Libre Baskerville', serif",
           fontSize: 22,
           fontWeight: 700,
           color: C.green,
+          border: "none",
+          background: "none",
+          padding: 0,
+          cursor: "pointer",
         }}
       >
         drift
-      </span>
+      </button>
 
       <div
         style={{
@@ -58,7 +66,7 @@ export function TopNav({
       <nav style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
         {[
           { id: "discover", label: "Discover" },
-          { id: "saved", label: `Saved${savedCount > 0 ? ` (${savedCount})` : ""}` },
+          { id: "saved", label: `Collections${savedCount > 0 ? ` (${savedCount})` : ""}` },
         ].map((item) => (
           <button
             key={item.id}
@@ -79,6 +87,25 @@ export function TopNav({
             {item.label}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={onOpenPreferences}
+          style={{
+            marginLeft: 10,
+            padding: "6px 14px",
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: "pointer",
+            fontFamily: "'DM Sans', sans-serif",
+            border: `1px solid ${C.border}`,
+            background: "#fff",
+            color: C.textMid,
+            transition: "all 0.15s",
+          }}
+        >
+          Preferences
+        </button>
         {showAuthActions ? (
           <button
             onClick={onSignOut}

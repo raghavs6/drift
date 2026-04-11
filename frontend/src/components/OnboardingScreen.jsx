@@ -76,6 +76,25 @@ const ToggleSwitch = ({ on }) => (
   </div>
 );
 
+const PreviewCard = ({ title, meta, tone }) => (
+  <div
+    style={{
+      padding: "14px 16px",
+      borderRadius: 18,
+      background: tone,
+      border: `1px solid rgba(255,255,255,0.12)`,
+      boxShadow: "0 18px 34px rgba(5,24,20,0.14)",
+      backdropFilter: "blur(10px)",
+      minWidth: 0,
+    }}
+  >
+    <div style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 16, color: "#fff", marginBottom: 6, lineHeight: 1.25 }}>
+      {title}
+    </div>
+    <div style={{ fontSize: 12, color: "rgba(255,255,255,0.78)" }}>{meta}</div>
+  </div>
+);
+
 export function OnboardingScreen({ onComplete, locationOptions = [] }) {
   const [step, setStep] = useState(0);
   const [prefs, setPrefs] = useState({
@@ -91,6 +110,23 @@ export function OnboardingScreen({ onComplete, locationOptions = [] }) {
   const fadeIn = { animation: "fadeUp 0.35s ease both" };
   const heroEmoji = ["🗺️", "👥", "🏕️"][step];
   const heroLabel = ["Find your next adventure", "Tell us about yourself", "Pick your vibe"][step];
+  const previewCards = [
+    {
+      title: `${prefs.location} tonight`,
+      meta: `${prefs.distance} radius · 2 strong-fit options live right now`,
+      tone: "linear-gradient(145deg, rgba(61,107,78,0.55), rgba(15,23,42,0.55))",
+    },
+    {
+      title: prefs.vibes.length ? `${prefs.vibes[0][0].toUpperCase()}${prefs.vibes[0].slice(1)} leaning deck` : "Mixed outdoor shortlist",
+      meta: `${prefs.comfort} effort · ${prefs.kidFriendly ? "Kid-friendly bias on" : "Open to all trip styles"}`,
+      tone: "linear-gradient(145deg, rgba(123,168,138,0.5), rgba(61,107,78,0.42))",
+    },
+    {
+      title: "First swipe preview",
+      meta: "Scenic, low-friction ideas will lead before longer hauls",
+      tone: "linear-gradient(145deg, rgba(139,126,106,0.48), rgba(61,107,78,0.34))",
+    },
+  ];
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: C.parchment }}>
@@ -141,10 +177,22 @@ export function OnboardingScreen({ onComplete, locationOptions = [] }) {
               color: "rgba(167,243,208,0.85)",
               fontStyle: "italic",
               lineHeight: 1.6,
+              maxWidth: 320,
             }}
           >
             {heroLabel}
           </p>
+
+          <div style={{ marginTop: 26, display: "grid", gap: 12 }}>
+            {previewCards.map((card) => (
+              <PreviewCard
+                key={card.title}
+                title={card.title}
+                meta={card.meta}
+                tone={card.tone}
+              />
+            ))}
+          </div>
         </div>
       </div>
 
@@ -342,6 +390,27 @@ export function OnboardingScreen({ onComplete, locationOptions = [] }) {
                     </button>
                   );
                 })}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 26,
+                  padding: 18,
+                  borderRadius: 18,
+                  background: "linear-gradient(135deg, rgba(232,240,229,0.95), rgba(245,240,230,0.95))",
+                  border: `1px solid ${C.borderLight}`,
+                  boxShadow: "0 16px 36px rgba(61,107,78,0.08)",
+                }}
+              >
+                <div style={{ fontSize: 11, letterSpacing: 1.2, textTransform: "uppercase", color: C.textSoft, marginBottom: 10 }}>
+                  Your deck preview
+                </div>
+                <div style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 22, color: C.text, marginBottom: 8 }}>
+                  {prefs.location} is ready.
+                </div>
+                <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.7 }}>
+                  Expect a first pass of scenic, weather-friendly ideas tuned for {prefs.comfort.toLowerCase()} effort within {prefs.distance}.
+                </div>
               </div>
             </div>
           ) : null}

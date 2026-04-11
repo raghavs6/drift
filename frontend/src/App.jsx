@@ -7,9 +7,9 @@ import { TopNav } from "./components/TopNav.jsx";
 import { OnboardingScreen } from "./components/OnboardingScreen.jsx";
 import { DetailView } from "./components/DetailView.jsx";
 import { CollectionsView } from "./components/CollectionsView.jsx";
+import { PreferencesPanel } from "./components/PreferencesPanel.jsx";
 import { CATEGORIES, DEFAULT_LOCATION, getLocationOptions } from "./lib/appConstants.js";
 import { buildDiscoverDeck, mergePrefs, DEFAULT_PREFS } from "./lib/discoverDeck.js";
-import { fetchExperiences } from "./lib/api.js";
 import { loadPersistedState, savePersistedState } from "./lib/persistence.js";
 import { supabase, hasSupabaseConfig } from "./supabase.js";
 import { C } from "./theme/palette.js";
@@ -122,6 +122,7 @@ export default function App() {
   const [skippedIds, setSkippedIds] = useState(() => initialPersisted?.skippedIds ?? []);
   const [detailExp, setDetailExp] = useState(null);
   const [swipeCollectionId, setSwipeCollectionId] = useState("saved");
+  const [showPreferences, setShowPreferences] = useState(false);
 
   const savedIds = useMemo(
     () => collections.find((collection) => collection.id === "saved")?.itemIds ?? [],
@@ -130,14 +131,9 @@ export default function App() {
 
   const locationOptions = useMemo(() => getLocationOptions(experiences), [experiences]);
 
-  const removedFromDiscover = useMemo(
-    () => [...new Set([...skippedIds, ...savedIds])],
-    [skippedIds, savedIds],
-  );
-
   const discoverDeck = useMemo(
-    () => buildDiscoverDeck(experiences, prefs, removedFromDiscover),
-    [experiences, prefs, removedFromDiscover],
+    () => buildDiscoverDeck(experiences, prefs, savedIds, skippedIds),
+    [experiences, prefs, savedIds, skippedIds],
   );
 
   const prefsSummary = useMemo(() => formatPrefsSummary(prefs), [prefs]);
@@ -146,6 +142,12 @@ export default function App() {
   const handleOnboardingComplete = useCallback((nextPrefs) => {
     setPrefs(mergePrefs(nextPrefs));
     setScreen("main");
+  }, []);
+
+  const handlePrefsUpdate = useCallback((nextPrefs) => {
+    setPrefs((current) => mergePrefs({ ...current, ...nextPrefs }));
+    setDetailExp(null);
+    setTab("discover");
   }, []);
 
   const handleSave = useCallback((id) => {
@@ -271,23 +273,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
-    fetchExperiences()
-      .then((items) => {
-        if (cancelled || !items.length) return;
-        setExperiences(normalizeExperiences(items));
-      })
-      .catch(() => {
-        /* keep seeded fallback until backend is ready */
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
     if (!hasSupabaseConfig || !supabase) {
       setAuthReady(true);
       setScreen(initialPersisted?.onboardingComplete ? "main" : "onboarding");
@@ -388,11 +373,26 @@ export default function App() {
           setTab(nextTab);
           setDetailExp(null);
         }}
+        onHome={() => {
+          setScreen("main");
+          setTab("discover");
+          setDetailExp(null);
+          setShowPreferences(false);
+        }}
+        onOpenPreferences={() => setShowPreferences((current) => !current)}
         onSignOut={handleSignOut}
         showAuthActions={hasSupabaseConfig}
         savedCount={savedIds.length}
         locationLabel={prefs.location || DEFAULT_LOCATION}
         maxTravelLabel={prefs.distance || DEFAULT_PREFS.distance}
+      />
+
+      <PreferencesPanel
+        open={showPreferences}
+        prefs={prefs}
+        locationOptions={locationOptions}
+        onClose={() => setShowPreferences(false)}
+        onSave={handlePrefsUpdate}
       />
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", marginTop: 56 }}>
@@ -405,6 +405,7 @@ export default function App() {
             onRemoveFromCollection={handleRemoveFromCollection}
             isSaved={savedIds.includes(detailExp.id)}
             collections={collections}
+            prefs={prefs}
           />
         ) : tab === "discover" ? (
           <SwipeView
@@ -421,6 +422,7 @@ export default function App() {
               reviewed: sessionReviewed,
               remaining: discoverDeck.length,
             }}
+            prefs={prefs}
           />
         ) : (
           <CollectionsView

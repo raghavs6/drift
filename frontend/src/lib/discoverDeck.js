@@ -83,12 +83,20 @@ function scoreExperience(exp, prefs) {
  *
  * @param {Array<object>} experiences normalized experiences
  * @param {typeof DEFAULT_PREFS} prefs
- * @param {string[]} removedIds skipped + saved (no longer shown in Discover)
+ * @param {string[]} savedIds hard-removed from Discover
+ * @param {string[]} skippedIds soft-removed until the fresh pool is exhausted
  */
-export function buildDiscoverDeck(experiences, prefs, removedIds) {
-  const removed = new Set(removedIds);
-  const pool = experiences.filter((e) => !removed.has(e.id));
-  if (pool.length === 0) return [];
+export function buildDiscoverDeck(experiences, prefs, savedIds, skippedIds) {
+  if (!experiences.length) return [];
+
+  const saved = new Set(savedIds);
+  const skipped = new Set(skippedIds);
+  const unsavedPool = experiences.filter((e) => !saved.has(e.id));
+  const basePool = unsavedPool.length > 0 ? unsavedPool : experiences;
+
+  // Recycle skipped cards after the fresh pool is exhausted so Discover never dead-ends.
+  const freshPool = basePool.filter((e) => !skipped.has(e.id));
+  const pool = freshPool.length > 0 ? freshPool : basePool;
 
   const maxMin = MAX_TRAVEL_MINUTES[prefs.distance] ?? 120;
   const selectedLocation = prefs.location || DEFAULT_LOCATION;

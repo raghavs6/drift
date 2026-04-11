@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { C } from "../theme/palette.js";
 import { SectionLabel, Tag, ConditionBadge } from "./ui.jsx";
 import { CardImage } from "./CardImage.jsx";
+import { formatInsightLine, getWhyForYou, getWhyNow } from "../lib/insights.js";
 
 function CollectionToggle({ label, icon, active, locked, onClick }) {
   return (
@@ -38,6 +39,7 @@ export function DetailView({
   onRemoveFromCollection,
   isSaved,
   collections,
+  prefs,
 }) {
   const [showCollectionManager, setShowCollectionManager] = useState(false);
   const [shareStatus, setShareStatus] = useState("");
@@ -52,6 +54,8 @@ export function DetailView({
 
   const savedCollection = collections.find((collection) => collection.id === "saved");
   const customMemberships = memberships.filter((collection) => collection.id !== "saved");
+  const whyForYou = getWhyForYou(experience, prefs || {});
+  const whyNow = getWhyNow(experience);
 
   const handlePrimarySave = () => {
     onSave(experience.id);
@@ -82,6 +86,11 @@ export function DetailView({
         setShareStatus("Share failed");
       }
     }
+  };
+
+  const handleOpenMaps = () => {
+    const query = encodeURIComponent(experience.location);
+    window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -148,20 +157,46 @@ export function DetailView({
           <div
             style={{
               borderRadius: 16,
-              background: C.borderLight,
-              height: 160,
+              background: "linear-gradient(180deg, #f3efe6 0%, #ece6d8 100%)",
+              minHeight: 160,
               display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexDirection: "column",
-              gap: 6,
+              justifyContent: "space-between",
+              gap: 10,
               color: C.textSoft,
               border: `1px solid ${C.border}`,
+              padding: 18,
             }}
           >
-            <span style={{ fontSize: 28 }}>🗺️</span>
-            <span style={{ fontSize: 13, fontWeight: 500 }}>{experience.location}</span>
-            <span style={{ fontSize: 12 }}>{experience.distance} away</span>
+            <div>
+              <div style={{ fontSize: 11, letterSpacing: 1.1, textTransform: "uppercase", marginBottom: 10 }}>
+                Location
+              </div>
+              <div style={{ fontSize: 24, marginBottom: 8 }}>🗺️</div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: C.text, marginBottom: 4 }}>
+                {experience.location}
+              </div>
+              <div style={{ fontSize: 12, color: C.textSoft }}>
+                Roughly {experience.distance} away from your selected area
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleOpenMaps}
+              style={{
+                alignSelf: "flex-start",
+                padding: "10px 14px",
+                borderRadius: 12,
+                border: `1px solid ${C.border}`,
+                background: "#fff",
+                color: C.textMid,
+                cursor: "pointer",
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              Open in Maps
+            </button>
           </div>
         </div>
 
@@ -211,6 +246,35 @@ export function DetailView({
 
           <p style={{ fontSize: 14, color: C.text, lineHeight: 1.8, margin: "0 0 12px" }}>{experience.description}</p>
           <p style={{ fontSize: 14, color: C.text, lineHeight: 1.8, margin: "0 0 24px" }}>{experience.description2}</p>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14, marginBottom: 28 }}>
+            <div
+              style={{
+                padding: 18,
+                borderRadius: 18,
+                background: "rgba(232,240,229,0.72)",
+                border: `1px solid ${C.borderLight}`,
+              }}
+            >
+              <SectionLabel>Why this for you</SectionLabel>
+              <div style={{ fontSize: 13, color: C.text, lineHeight: 1.7 }}>
+                {formatInsightLine(whyForYou)}
+              </div>
+            </div>
+            <div
+              style={{
+                padding: 18,
+                borderRadius: 18,
+                background: "rgba(245,240,230,0.84)",
+                border: `1px solid ${C.borderLight}`,
+              }}
+            >
+              <SectionLabel>Why now</SectionLabel>
+              <div style={{ fontSize: 13, color: C.text, lineHeight: 1.7 }}>
+                {formatInsightLine(whyNow)}
+              </div>
+            </div>
+          </div>
 
           <SectionLabel>What to bring</SectionLabel>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 28 }}>

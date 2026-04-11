@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { C } from "../theme/palette.js";
 import { Tag, ConditionBadge } from "./ui.jsx";
 import { CardImage } from "./CardImage.jsx";
+import { getCollectionSummary } from "../lib/insights.js";
 
 function CollectionCard({ experience, onViewDetail, onRemove, removeLabel }) {
   return (
@@ -110,6 +111,10 @@ export function CollectionsView({
   const availableToAdd = selectedCollection
     ? savedItems.filter((experience) => !selectedCollection.itemIds.includes(experience.id))
     : [];
+  const collectionSummary = useMemo(
+    () => getCollectionSummary(selectedCollection, selectedItems),
+    [selectedCollection, selectedItems],
+  );
 
   const handleCreateSubmit = () => {
     const trimmed = draftName.trim();
@@ -308,6 +313,60 @@ export function CollectionsView({
               Delete collection
             </button>
           ) : null}
+        </div>
+
+        <div
+          style={{
+            marginBottom: 24,
+            borderRadius: 24,
+            overflow: "hidden",
+            border: `1px solid ${C.borderLight}`,
+            background: "#fff",
+            boxShadow: "0 18px 44px rgba(61,107,78,0.08)",
+          }}
+        >
+          <div style={{ display: "grid", gridTemplateColumns: "1.05fr 1.35fr", minHeight: 250 }}>
+            <div style={{ minHeight: 250 }}>
+              {collectionSummary.cover ? (
+                <CardImage experience={collectionSummary.cover} style={{ height: "100%" }} />
+              ) : (
+                <div
+                  style={{
+                    height: "100%",
+                    background:
+                      "linear-gradient(135deg, rgba(123,168,138,0.34), rgba(245,240,230,0.78)), radial-gradient(circle at top right, rgba(61,107,78,0.2), transparent 40%)",
+                  }}
+                />
+              )}
+            </div>
+            <div
+              style={{
+                padding: "26px 28px",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                background: "linear-gradient(180deg, rgba(250,249,246,0.98), rgba(245,240,230,0.74))",
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 11, color: C.textSoft, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 10 }}>
+                  {collectionSummary.eyebrow}
+                </div>
+                <h3 style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 28, lineHeight: 1.15, color: C.text, margin: "0 0 12px" }}>
+                  {collectionSummary.title}
+                </h3>
+                <p style={{ fontSize: 14, color: C.textMid, lineHeight: 1.75, margin: 0 }}>
+                  {collectionSummary.blurb}
+                </p>
+              </div>
+
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 20 }}>
+                <Tag bg={C.greenLight} color={C.green}>{collectionSummary.mood}</Tag>
+                <Tag bg={C.tanLight} color={C.tan}>{collectionSummary.season}</Tag>
+                <Tag bg="#EDE8DC" color="#6B6050">{collectionSummary.pace}</Tag>
+              </div>
+            </div>
+          </div>
         </div>
 
         {selectedCollection?.id !== "saved" ? (
