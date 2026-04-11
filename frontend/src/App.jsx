@@ -11,6 +11,7 @@ import { PreferencesPanel } from "./components/PreferencesPanel.jsx";
 import { CATEGORIES, DEFAULT_LOCATION, getLocationOptions } from "./lib/appConstants.js";
 import { buildDiscoverDeck, mergePrefs, DEFAULT_PREFS } from "./lib/discoverDeck.js";
 import { loadPersistedState, savePersistedState } from "./lib/persistence.js";
+import { fetchWeatherForLocation } from "./lib/weather.js";
 import { supabase, hasSupabaseConfig } from "./supabase.js";
 import { C } from "./theme/palette.js";
 
@@ -123,6 +124,14 @@ export default function App() {
   const [detailExp, setDetailExp] = useState(null);
   const [swipeCollectionId, setSwipeCollectionId] = useState("saved");
   const [showPreferences, setShowPreferences] = useState(false);
+  const [weather, setWeather] = useState({
+    temperature: "--",
+    wind: "--",
+    sky: "Loading",
+    summary: "Loading current weather...",
+    sunset: "--",
+    updatedAt: null,
+  });
 
   const savedIds = useMemo(
     () => collections.find((collection) => collection.id === "saved")?.itemIds ?? [],
@@ -246,6 +255,15 @@ export default function App() {
     setCollections((current) => current.filter((collection) => collection.id !== collectionId));
   }, []);
 
+  const handleResetSaved = useCallback(() => {
+    setCollections((current) =>
+      current.map((collection) => ({
+        ...collection,
+        itemIds: [],
+      })),
+    );
+  }, []);
+
   const handleDetail = useCallback((experience) => {
     setDetailExp(experience);
   }, []);
@@ -315,6 +333,28 @@ export default function App() {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const location = prefs.location || DEFAULT_LOCATION;
+
+    fetchWeatherForLocation(location, controller.signal)
+      .then((data) => {
+        setWeather(data);
+      })
+      .catch(() => {
+        setWeather({
+          temperature: "--",
+          wind: "--",
+          sky: "Unavailable",
+          summary: "Live weather unavailable right now",
+          sunset: "--",
+          updatedAt: null,
+        });
+      });
+
+    return () => controller.abort();
+  }, [prefs.location]);
 
   const handleGoogleSignIn = async () => {
     if (!supabase) return;
@@ -423,16 +463,19 @@ export default function App() {
               remaining: discoverDeck.length,
             }}
             prefs={prefs}
+            weather={weather}
           />
         ) : (
           <CollectionsView
             collections={collections}
             experiences={experiences}
+            prefs={prefs}
             onViewDetail={handleDetail}
             onCreateCollection={handleCreateCollection}
             onAddToCollection={handleAddToCollection}
             onRemoveFromCollection={handleRemoveFromCollection}
             onDeleteCollection={handleDeleteCollection}
+            onResetSaved={handleResetSaved}
           />
         )}
       </div>

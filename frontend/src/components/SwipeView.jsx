@@ -361,6 +361,7 @@ export function SwipeView({
   prefsSummary,
   sessionStats,
   prefs,
+  weather,
 }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [swipeDir, setSwipeDir] = useState(null);
@@ -394,6 +395,13 @@ export function SwipeView({
     const timeout = window.setTimeout(() => setNotice(null), 1800);
     return () => window.clearTimeout(timeout);
   }, [notice]);
+
+  useEffect(() => {
+    setCurrentIndex(0);
+    setSwipeDir(null);
+    setDragX(0);
+    setIsDragging(false);
+  }, [experiences]);
 
   const handleSwipe = useCallback(
     (dir) => {
@@ -575,7 +583,7 @@ export function SwipeView({
               {headlineCount} strong-fit idea{headlineCount === 1 ? "" : "s"} for right now
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 13, color: C.green, fontWeight: 600 }}>68°F · clear · light wind</span>
+              <span style={{ fontSize: 13, color: C.green, fontWeight: 600 }}>{weather?.summary || "Live weather unavailable"}</span>
               <span style={{ fontSize: 13, color: C.textSoft }}>
                 {prefsSummary ? `Tuned for ${prefsSummary}` : "Editorially ranked for the moment"}
               </span>
@@ -617,15 +625,15 @@ export function SwipeView({
           }}
         >
           <DashboardCard title="Today's Conditions">
-            <MetricRow label="Temp" value="68°F" icon="☀" />
-            <MetricRow label="Wind" value="8 mph" icon="➳" />
-            <MetricRow label="Sky" value="Clear" icon="◌" />
+            <MetricRow label="Temp" value={weather?.temperature || "--"} icon="☀" />
+            <MetricRow label="Wind" value={weather?.wind || "--"} icon="➳" />
+            <MetricRow label="Sky" value={weather?.sky || "--"} icon="◌" />
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
               <span style={{ color: C.textSoft, display: "flex", alignItems: "center", gap: 8 }}>
                 <span>✦</span>
-                Golden hour
+                Sunset
               </span>
-              <span style={{ fontWeight: 600, color: C.text }}>7:42pm</span>
+              <span style={{ fontWeight: 600, color: C.text }}>{weather?.sunset || "--"}</span>
             </div>
           </DashboardCard>
 

@@ -2,9 +2,168 @@ import { useEffect, useMemo, useState } from "react";
 import { C } from "../theme/palette.js";
 import { Tag, ConditionBadge } from "./ui.jsx";
 import { CardImage } from "./CardImage.jsx";
-import { getCollectionSummary } from "../lib/insights.js";
+import { formatInsightLine, getCollectionSummary, getWhyForYou, getWhyNow } from "../lib/insights.js";
+import { Drifty } from "./Drifty.jsx";
 
-function CollectionCard({ experience, onViewDetail, onRemove, removeLabel }) {
+function ComparisonMetric({ label, value }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12, paddingBottom: 8, marginBottom: 8, borderBottom: `1px solid ${C.borderLight}` }}>
+      <span style={{ color: C.textSoft }}>{label}</span>
+      <span style={{ color: C.text, fontWeight: 600, textAlign: "right" }}>{value}</span>
+    </div>
+  );
+}
+
+function CompareCard({ experience, onViewDetail, onRemove, prefs, highlight }) {
+  const whyForYou = formatInsightLine(getWhyForYou(experience, prefs || {}));
+  const whyNow = formatInsightLine(getWhyNow(experience));
+
+  return (
+    <div
+      style={{
+        borderRadius: 18,
+        overflow: "hidden",
+        background: "#fff",
+        border: `1px solid ${C.borderLight}`,
+        boxShadow: "0 10px 28px rgba(61,107,78,0.08)",
+        position: "relative",
+      }}
+    >
+      {highlight ? (
+        <div
+          style={{
+            position: "absolute",
+            top: 14,
+            right: 14,
+            zIndex: 2,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "8px 12px 8px 8px",
+            borderRadius: 999,
+            background: "rgba(255,255,255,0.92)",
+            border: `1px solid ${C.borderLight}`,
+            boxShadow: "0 10px 20px rgba(61,107,78,0.1)",
+          }}
+        >
+          <Drifty size={32} pose="sparkle" />
+          <div>
+            <div style={{ fontSize: 10, color: C.textSoft, textTransform: "uppercase", letterSpacing: 1.1 }}>
+              Drifty Pick
+            </div>
+            <div style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>
+              Best current tradeoff
+            </div>
+          </div>
+        </div>
+      ) : null}
+      <div style={{ height: 160, overflow: "hidden" }}>
+        <CardImage experience={experience} style={{ height: 160 }} />
+      </div>
+      <div style={{ padding: "16px 18px" }}>
+        <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 6 }}>
+          {experience.categoryLabel} · {experience.location}
+        </div>
+        <h3 style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 18, lineHeight: 1.2, color: C.text, margin: "0 0 10px" }}>
+          {experience.title}
+        </h3>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+          <Tag bg={C.greenLight} color={C.green}>{experience.difficulty}</Tag>
+          <Tag bg={C.tanLight} color={C.tan}>{experience.cost}</Tag>
+          <ConditionBadge type={experience.conditionType} label={experience.condition} />
+        </div>
+
+        <div
+          style={{
+            padding: "12px 14px",
+            borderRadius: 14,
+            background: "rgba(232,240,229,0.72)",
+            border: `1px solid ${C.borderLight}`,
+            marginBottom: 12,
+          }}
+        >
+          <div style={{ fontSize: 11, color: C.textSoft, textTransform: "uppercase", letterSpacing: 1.1, marginBottom: 6 }}>
+            Why this fits
+          </div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            {whyForYou}
+          </div>
+        </div>
+
+        <ComparisonMetric label="Drive" value={experience.distance} />
+        <ComparisonMetric label="Time" value={experience.time} />
+        <ComparisonMetric label="Season" value={experience.season} />
+        <ComparisonMetric label="Family fit" value={experience.kidFriendly ? "Kid-friendly" : "Better for older groups"} />
+
+        <div
+          style={{
+            padding: "12px 14px",
+            borderRadius: 14,
+            background: "rgba(245,240,230,0.84)",
+            border: `1px solid ${C.borderLight}`,
+            margin: "12px 0",
+          }}
+        >
+          <div style={{ fontSize: 11, color: C.textSoft, textTransform: "uppercase", letterSpacing: 1.1, marginBottom: 6 }}>
+            Why now
+          </div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            {whyNow}
+          </div>
+        </div>
+
+        <p style={{ fontSize: 12, color: C.textSoft, lineHeight: 1.6, margin: "0 0 10px" }}>
+          {experience.hook}
+        </p>
+        <p style={{ fontSize: 12, color: C.textMid, lineHeight: 1.65, margin: "0 0 14px" }}>
+          {experience.description}
+        </p>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+          {experience.whatToBring.slice(0, 3).map((item) => (
+            <Tag key={item} bg="#EDE8DC" color="#6B6050">{item}</Tag>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => onViewDetail(experience)}
+            style={{
+              flex: 1,
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: `1px solid ${C.border}`,
+              background: "#fff",
+              color: C.textMid,
+              cursor: "pointer",
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 12,
+            }}
+          >
+            View details
+          </button>
+          <button
+            type="button"
+            onClick={() => onRemove(experience.id)}
+            style={{
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "none",
+              background: C.greenLight,
+              color: C.green,
+              cursor: "pointer",
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 12,
+            }}
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CollectionCard({ experience, onViewDetail, onRemove, removeLabel, comparing, onToggleCompare, compareSelected, compareDisabled }) {
   return (
     <div
       onClick={() => onViewDetail(experience)}
@@ -30,6 +189,29 @@ function CollectionCard({ experience, onViewDetail, onRemove, removeLabel }) {
         <CardImage experience={experience} style={{ height: 130 }} />
       </div>
       <div style={{ padding: "14px 16px" }}>
+        {comparing ? (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleCompare(experience.id);
+            }}
+            disabled={compareDisabled}
+            style={{
+              marginBottom: 10,
+              padding: "7px 10px",
+              borderRadius: 999,
+              border: `1px solid ${compareSelected ? C.green : C.border}`,
+              background: compareSelected ? C.greenLight : "#fff",
+              color: compareSelected ? C.green : C.textSoft,
+              fontSize: 11,
+              cursor: compareDisabled ? "default" : "pointer",
+              fontFamily: "'DM Sans', sans-serif",
+            }}
+          >
+            {compareSelected ? "Selected for compare" : "Add to compare"}
+          </button>
+        ) : null}
         <div style={{ fontSize: 11, color: C.textSoft, marginBottom: 4 }}>
           {experience.categoryLabel} · {experience.distance}
         </div>
@@ -77,15 +259,18 @@ function CollectionCard({ experience, onViewDetail, onRemove, removeLabel }) {
 export function CollectionsView({
   collections,
   experiences,
+  prefs,
   onViewDetail,
   onCreateCollection,
   onAddToCollection,
   onRemoveFromCollection,
   onDeleteCollection,
+  onResetSaved,
 }) {
   const [activeCol, setActiveCol] = useState("saved");
   const [isCreating, setIsCreating] = useState(false);
   const [draftName, setDraftName] = useState("");
+  const [compareIds, setCompareIds] = useState([]);
 
   useEffect(() => {
     if (!collections.some((collection) => collection.id === activeCol)) {
@@ -115,6 +300,9 @@ export function CollectionsView({
     () => getCollectionSummary(selectedCollection, selectedItems),
     [selectedCollection, selectedItems],
   );
+  const compareItems = compareIds.map((id) => experiencesById.get(id)).filter(Boolean);
+  const compareMode = compareIds.length > 0;
+  const driftyComparePick = compareItems[0] ?? null;
 
   const handleCreateSubmit = () => {
     const trimmed = draftName.trim();
@@ -134,6 +322,22 @@ export function CollectionsView({
       setActiveCol(match.id);
     }
   }, [activeCol, collections]);
+
+  useEffect(() => {
+    setCompareIds((current) => current.filter((id) => selectedCollection?.itemIds.includes(id)));
+  }, [selectedCollection]);
+
+  const toggleCompare = (experienceId) => {
+    setCompareIds((current) => {
+      if (current.includes(experienceId)) {
+        return current.filter((id) => id !== experienceId);
+      }
+      if (current.length >= 3) {
+        return current;
+      }
+      return [...current, experienceId];
+    });
+  };
 
   return (
     <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
@@ -295,25 +499,123 @@ export function CollectionsView({
               {selectedItems.length} experience{selectedItems.length !== 1 ? "s" : ""} in this collection
             </p>
           </div>
-          {!["saved", "bucket"].includes(selectedCollection?.id) ? (
-            <button
-              type="button"
-              onClick={() => onDeleteCollection(selectedCollection.id)}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: `1px solid ${C.border}`,
-                background: "#fff",
-                color: C.textSoft,
-                cursor: "pointer",
-                fontFamily: "'DM Sans', sans-serif",
-                fontSize: 12,
-              }}
-            >
-              Delete collection
-            </button>
-          ) : null}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {selectedItems.length >= 2 ? (
+              <button
+                type="button"
+                onClick={() => setCompareIds((current) => (current.length ? [] : selectedItems.slice(0, 2).map((item) => item.id)))}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: `1px solid ${compareMode ? C.green : C.border}`,
+                  background: compareMode ? C.greenLight : "#fff",
+                  color: compareMode ? C.green : C.textSoft,
+                  cursor: "pointer",
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: 12,
+                }}
+              >
+                {compareMode ? "Close compare" : "Compare picks"}
+              </button>
+            ) : null}
+            {selectedCollection?.id === "saved" ? (
+              <button
+                type="button"
+                onClick={() => onResetSaved?.()}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: `1px solid ${C.border}`,
+                  background: "#fff",
+                  color: C.textSoft,
+                  cursor: "pointer",
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: 12,
+                }}
+              >
+                Reset Saved
+              </button>
+            ) : null}
+            {!["saved", "bucket"].includes(selectedCollection?.id) ? (
+              <button
+                type="button"
+                onClick={() => onDeleteCollection(selectedCollection.id)}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: `1px solid ${C.border}`,
+                  background: "#fff",
+                  color: C.textSoft,
+                  cursor: "pointer",
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: 12,
+                }}
+              >
+                Delete collection
+              </button>
+            ) : null}
+          </div>
         </div>
+
+        {compareMode ? (
+          <div
+            style={{
+              marginBottom: 24,
+              padding: 20,
+              borderRadius: 22,
+              border: `1px solid ${C.borderLight}`,
+              background: "linear-gradient(180deg, rgba(250,249,246,0.98), rgba(245,240,230,0.8))",
+              boxShadow: "0 18px 44px rgba(61,107,78,0.08)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div
+                  style={{
+                    width: 76,
+                    height: 76,
+                    borderRadius: 20,
+                    background: "linear-gradient(180deg, rgba(232,240,229,0.96), rgba(245,240,230,0.96))",
+                    border: `1px solid ${C.borderLight}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Drifty size={58} pose="clipboard" />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: C.textSoft, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 8 }}>
+                    Compare Mode
+                  </div>
+                  <h3 style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 24, color: C.text, margin: "0 0 6px" }}>
+                    Side-by-side planning view
+                  </h3>
+                  <p style={{ margin: 0, fontSize: 13, color: C.textMid, lineHeight: 1.6 }}>
+                    Drifty is scanning timing, effort, and payoff so the strongest tradeoff rises to the top.
+                  </p>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: C.textSoft }}>
+                Pick up to 3 saved options to compare the tradeoffs.
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${compareItems.length}, minmax(0, 1fr))`, gap: 16 }}>
+              {compareItems.map((experience) => (
+                <CompareCard
+                  key={experience.id}
+                  experience={experience}
+                  onViewDetail={onViewDetail}
+                  onRemove={(experienceId) => setCompareIds((current) => current.filter((id) => id !== experienceId))}
+                  prefs={prefs}
+                  highlight={driftyComparePick?.id === experience.id}
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <div
           style={{
@@ -437,6 +739,10 @@ export function CollectionsView({
                 onViewDetail={onViewDetail}
                 onRemove={(experienceId) => onRemoveFromCollection(selectedCollection.id, experienceId)}
                 removeLabel={selectedCollection.id === "saved" ? "Remove from Saved" : "Remove from collection"}
+                comparing={selectedItems.length >= 2}
+                onToggleCompare={toggleCompare}
+                compareSelected={compareIds.includes(experience.id)}
+                compareDisabled={compareIds.length >= 3 && !compareIds.includes(experience.id)}
               />
             ))}
           </div>
