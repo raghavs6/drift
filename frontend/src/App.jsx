@@ -119,6 +119,7 @@ export default function App() {
   );
   const [skippedIds, setSkippedIds] = useState(() => initialPersisted?.skippedIds ?? []);
   const [detailExp, setDetailExp] = useState(null);
+  const [swipeCollectionId, setSwipeCollectionId] = useState("saved");
 
   const savedIds = useMemo(
     () => collections.find((collection) => collection.id === "saved")?.itemIds ?? [],
@@ -202,6 +203,14 @@ export default function App() {
       ),
     );
   }, []);
+
+  const handleSwipeSave = useCallback((id) => {
+    if (swipeCollectionId && swipeCollectionId !== "saved") {
+      handleAddToCollection(swipeCollectionId, id);
+      return;
+    }
+    handleSave(id);
+  }, [handleAddToCollection, handleSave, swipeCollectionId]);
 
   const handleRemoveFromCollection = useCallback((collectionId, experienceId) => {
     setCollections((current) =>
@@ -380,10 +389,13 @@ export default function App() {
           <SwipeView
             experiences={discoverDeck}
             onViewDetail={handleDetail}
-            onSave={handleSave}
+            onSave={handleSwipeSave}
             onSkip={handleSkip}
             locationLabel={prefs.location || DEFAULT_LOCATION}
             prefsSummary={prefsSummary}
+            collections={collections}
+            swipeCollectionId={swipeCollectionId}
+            onSwipeCollectionChange={setSwipeCollectionId}
             sessionStats={{
               reviewed: sessionReviewed,
               remaining: discoverDeck.length,

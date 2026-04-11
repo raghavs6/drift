@@ -39,6 +39,9 @@ export function SwipeView({
   onViewDetail,
   onSave,
   onSkip,
+  collections = [],
+  swipeCollectionId = "saved",
+  onSwipeCollectionChange,
   locationLabel = "Madison, WI",
   prefsSummary,
   sessionStats,
@@ -53,6 +56,7 @@ export function SwipeView({
   const next = experiences[currentIndex + 1];
   const after = experiences[currentIndex + 2];
   const perfectCount = experiences.filter((e) => e.conditionScore > 0.85).length;
+  const swipeTarget = collections.find((collection) => collection.id === swipeCollectionId) ?? collections[0];
 
   const handleSwipe = useCallback(
     (dir) => {
@@ -220,6 +224,40 @@ export function SwipeView({
                 <span style={{ fontWeight: 500, color: C.text }}>{r.value}</span>
               </div>
             ))}
+          </div>
+
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: 16,
+              padding: 18,
+              border: `1px solid ${C.borderLight}`,
+            }}
+          >
+            <SectionLabel>Right Swipe Target</SectionLabel>
+            <div style={{ fontSize: 12, color: C.textSoft, marginBottom: 12 }}>
+              Swipe right adds to Saved{swipeTarget?.id !== "saved" ? ` and ${swipeTarget?.label}` : ""}.
+            </div>
+            <select
+              value={swipeCollectionId}
+              onChange={(event) => onSwipeCollectionChange?.(event.target.value)}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: `1px solid ${C.border}`,
+                background: C.parchment,
+                color: C.text,
+                fontSize: 13,
+                fontFamily: "'DM Sans', sans-serif",
+              }}
+            >
+              {collections.map((collection) => (
+                <option key={collection.id} value={collection.id}>
+                  {collection.icon} {collection.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div
