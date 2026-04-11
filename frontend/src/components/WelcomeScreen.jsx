@@ -1,4 +1,5 @@
 import { C } from "../theme/palette.js";
+import { Drifty } from "./Drifty.jsx";
 
 const GoogleMark = ({ size = 28 }) => (
   <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true">
@@ -130,12 +131,28 @@ export function WelcomeScreen({ onContinueWithGoogle, authBusy }) {
             </p>
           </div>
 
-          <div style={{ background: "rgba(255,255,255,0.78)", border: `1px solid ${C.borderLight}`, borderRadius: 30, padding: "28px 24px 24px", boxShadow: "0 22px 60px rgba(61,107,78,0.08)", backdropFilter: "blur(20px)" }}>
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 24 }}>
-              <div style={{ width: 68, height: 68, borderRadius: 22, background: "linear-gradient(145deg, #ffffff 0%, #eef4ef 100%)", border: `1px solid ${C.borderLight}`, boxShadow: "0 10px 26px rgba(61,107,78,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <GoogleMark size={34} />
-              </div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 12, marginBottom: 18, animation: "driftySlideIn 0.5s ease both" }}>
+            <Drifty size={56} pose="wave" style={{ animation: "driftyBounce 2.4s ease-in-out infinite", flexShrink: 0 }} />
+            <div
+              style={{
+                background: "#fff",
+                color: C.green,
+                fontSize: 13,
+                fontWeight: 600,
+                fontFamily: "'DM Sans', sans-serif",
+                padding: "10px 16px",
+                borderRadius: 16,
+                borderBottomLeftRadius: 4,
+                boxShadow: "0 4px 16px rgba(61,107,78,0.1)",
+                lineHeight: 1.5,
+                animation: "driftyBubble 0.5s ease 0.3s both",
+              }}
+            >
+              Hey! Sign in to save your adventures
             </div>
+          </div>
+
+          <div style={{ background: "rgba(255,255,255,0.78)", border: `1px solid ${C.borderLight}`, borderRadius: 30, padding: "28px 24px 24px", boxShadow: "0 22px 60px rgba(61,107,78,0.08)", backdropFilter: "blur(20px)" }}>
 
             <button
               onClick={onContinueWithGoogle}
@@ -166,6 +183,21 @@ export function WelcomeScreen({ onContinueWithGoogle, authBusy }) {
       </section>
 
       <style>{`
+        @keyframes driftyBounce {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-5px); }
+        }
+
+        @keyframes driftySlideIn {
+          from { opacity: 0; transform: translateY(14px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes driftyBubble {
+          from { opacity: 0; transform: translateX(-8px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+
         @media (max-width: 980px) {
           .welcome-root {
             grid-template-columns: 1fr !important;

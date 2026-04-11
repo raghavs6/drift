@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { C } from "../theme/palette.js";
 import { SectionLabel } from "./ui.jsx";
+import { Drifty } from "./Drifty.jsx";
 import {
   CATEGORIES,
   DISTANCES,
@@ -8,6 +9,44 @@ import {
   COMFORT,
   DEFAULT_LOCATION,
 } from "../lib/appConstants.js";
+
+const DRIFTY_HINTS = [
+  { text: "Pick where you are so I can find stuff nearby!", pose: "wave" },
+  { text: "Tell me a bit about yourself!", pose: "clipboard" },
+  { text: "Last step — pick what sounds fun!", pose: "sparkle" },
+];
+
+const DriftyHelper = ({ step }) => (
+  <div
+    key={step}
+    style={{
+      display: "flex",
+      alignItems: "flex-start",
+      gap: 10,
+      marginBottom: 28,
+      animation: "driftySlideIn 0.45s ease both",
+    }}
+  >
+    <Drifty size={44} pose={DRIFTY_HINTS[step].pose} style={{ flexShrink: 0, animation: "driftyBounce 2.4s ease-in-out infinite" }} />
+    <div
+      style={{
+        background: C.greenLight,
+        color: C.green,
+        fontSize: 13,
+        fontWeight: 600,
+        fontFamily: "'DM Sans', sans-serif",
+        padding: "10px 14px",
+        borderRadius: 14,
+        borderBottomLeftRadius: 4,
+        boxShadow: "0 2px 10px rgba(61,107,78,0.08)",
+        lineHeight: 1.5,
+        animation: "driftyBubble 0.4s ease 0.2s both",
+      }}
+    >
+      {DRIFTY_HINTS[step].text}
+    </div>
+  </div>
+);
 
 const TreeLine = ({ style }) => (
   <svg viewBox="0 0 400 60" style={{ width: "100%", height: 60, ...style }}>
@@ -214,6 +253,7 @@ export function OnboardingScreen({ onComplete, locationOptions = [] }) {
         </div>
 
         <div style={{ maxWidth: 480 }}>
+          <DriftyHelper step={step} />
           {step === 0 ? (
             <div key="s0" style={fadeIn}>
               <h2 style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 28, color: C.text, marginBottom: 6 }}>
@@ -484,6 +524,21 @@ export function OnboardingScreen({ onComplete, locationOptions = [] }) {
         @keyframes fadeUp {
           from { opacity: 0; transform: translateY(14px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes driftyBounce {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-5px); }
+        }
+
+        @keyframes driftySlideIn {
+          from { opacity: 0; transform: translateY(14px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes driftyBubble {
+          from { opacity: 0; transform: translateX(-8px); }
+          to { opacity: 1; transform: translateX(0); }
         }
       `}</style>
     </div>
