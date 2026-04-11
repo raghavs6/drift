@@ -34,7 +34,14 @@ function SwipeButton({ icon, borderColor, onClick, size = 52, fontSize = 22 }) {
   );
 }
 
-export function SwipeView({ experiences, onViewDetail, onSave, onSkip }) {
+export function SwipeView({
+  experiences,
+  onViewDetail,
+  onSave,
+  onSkip,
+  prefsSummary,
+  sessionStats,
+}) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [swipeDir, setSwipeDir] = useState(null);
   const [dragX, setDragX] = useState(0);
@@ -52,7 +59,8 @@ export function SwipeView({ experiences, onViewDetail, onSave, onSkip }) {
       if (dir === "right") onSave(current.id);
       else onSkip(current.id);
       setTimeout(() => {
-        setCurrentIndex((i) => i + 1);
+        // Parent removes this card from the deck; next card is always at index 0.
+        setCurrentIndex(0);
         setSwipeDir(null);
         setDragX(0);
       }, 280);
@@ -116,8 +124,9 @@ export function SwipeView({ experiences, onViewDetail, onSave, onSkip }) {
           background: C.greenLight,
           padding: "8px 32px",
           display: "flex",
-          alignItems: "center",
-          gap: 8,
+          flexDirection: "column",
+          gap: prefsSummary ? 4 : 0,
+          alignItems: "flex-start",
           fontSize: 13,
           color: C.green,
           fontWeight: 500,
@@ -125,7 +134,14 @@ export function SwipeView({ experiences, onViewDetail, onSave, onSkip }) {
           flexShrink: 0,
         }}
       >
-        ☀ {perfectCount} experiences are <strong>perfect</strong> for right now near Madison · 68°F, clear
+        <span>
+          ☀ {perfectCount} experiences are <strong>perfect</strong> for right now near Madison · 68°F, clear
+        </span>
+        {prefsSummary ? (
+          <span style={{ fontSize: 12, fontWeight: 400, color: C.textMid, maxWidth: "100%" }}>
+            For you: {prefsSummary}
+          </span>
+        ) : null}
       </div>
 
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
@@ -183,8 +199,14 @@ export function SwipeView({ experiences, onViewDetail, onSave, onSkip }) {
           >
             <SectionLabel>This Session</SectionLabel>
             {[
-              { label: "Swiped", value: currentIndex },
-              { label: "Left", value: Math.max(0, experiences.length - currentIndex) },
+              {
+                label: "Reviewed",
+                value: sessionStats?.reviewed ?? currentIndex,
+              },
+              {
+                label: "Left in deck",
+                value: sessionStats?.remaining ?? Math.max(0, experiences.length - currentIndex),
+              },
             ].map((r) => (
               <div
                 key={r.label}
