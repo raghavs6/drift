@@ -1,201 +1,82 @@
-# Drift Project Specification
+# CLAUDE.md
 
-## Product Summary
+Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 
-`Drift` is a swipe-based outdoor discovery app. Users should be able to open the app, complete a short onboarding flow, and immediately start swiping through curated nearby experiences such as hiking, kayaking, stargazing, biking, and wildlife activities.
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
-The core product goal is to reduce planning friction by replacing search-heavy discovery with a ranked feed of outdoor experiences that are relevant to the user's tastes and the current moment.
+## 1. Think Before Coding
 
-## MVP Goals
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
 
-- Deliver a mobile-first web app focused on fast discovery.
-- Keep onboarding under 20 seconds with mostly tap-based inputs.
-- Show only experiences that make sense for the user's location, travel radius, and current conditions.
-- Learn lightweight preference signals from swipe behavior.
-- Let users save right-swiped experiences into collections.
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
 
-## Target User
+## 2. Simplicity First
 
-Primary users are people aged 18-35 who want to do more outdoor activities but do not want to spend time searching, filtering, and comparing listings.
+**Minimum code that solves the problem. Nothing speculative.**
 
-## Core User Flow
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
 
-1. User opens the app.
-2. User completes onboarding with location, travel distance, and preference inputs.
-3. App generates an initial ranked stack of nearby experiences.
-4. User swipes left to skip, right to save, and taps or swipes up for details.
-5. Saved items appear in collections such as `Saved` and `Bucket List`.
-6. Future card ranking improves based on swipe behavior.
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
 
-## Onboarding Requirements
+## 3. Surgical Changes
 
-### Required Inputs
+**Touch only what you must. Clean up only your own mess.**
 
-- Location: geolocation first, manual override as fallback.
-- Max travel distance: `15 min`, `30 min`, `1 hr`, or `2 hr`.
-- Age range.
-- Kid-friendly toggle, with child age follow-up when enabled.
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
 
-### Optional Inputs
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
 
-- Activity vibes: choose 3-5 categories.
-- Comfort level: `Casual`, `Moderate`, or `Adventurous`.
+The test: Every changed line should trace directly to the user's request.
 
-## Core Product Features
+## 4. Goal-Driven Execution
 
-### Swipe Discovery
+**Define success criteria. Loop until verified.**
 
-Each experience card should include:
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
 
-- Hero image
-- Title
-- One-line hook
-- Distance from user
-- Difficulty
-- Cost
-- Estimated time
-- Best season
-- Real-time condition badge
-
-### Detail View
-
-Each experience detail screen should include:
-
-- Image gallery
-- Expanded description
-- Map and drive time
-- Conditions breakdown
-- What-to-bring checklist
-- Save to collection action
-- Share action
-
-### Collections
-
-- Provide default collections: `Saved` and `Bucket List`.
-- Support user-created collections.
-- Collections should list saved experiences with compact metadata.
-
-### Recommendation Engine
-
-The recommendation engine should adapt based on:
-
-- Activity category preference
-- Distance preference
-- Difficulty preference
-- Cost sensitivity
-- Time preference
-- Real-time condition fit
-
-Initial ranking for new users should rely on onboarding preferences plus condition score.
-
-## Condition Layer
-
-Condition scoring should use a combination of:
-
-- Current weather
-- Forecast data
-- Seasonality
-- Time of day
-- Simple MVP heuristics for activity suitability
-
-Condition badges should support:
-
-- `Perfect right now`
-- `Great this week`
-- `Check conditions`
-- `Not ideal right now`
-
-## Architecture Decision
-
-The original feature spec described `React + Express`, but this repository should use the following implementation stack instead:
-
-- Frontend: `React 18 + Vite`
-- Styling: `Tailwind CSS` or simple CSS during early scaffolding
-- State management: React context or local reducer-based state
-- Backend: `Python + FastAPI`
-- Persistence for MVP: local JSON files
-- Weather integration: `OpenWeatherMap`
-- Optional AI text generation: Anthropic or another provider behind backend services
-
-## Monorepo Layout
-
-The repository should use this top-level structure:
-
-```text
-/
-├── AGENT.md
-├── README.md
-├── .gitignore
-├── docx/
-├── frontend/
-│   ├── package.json
-│   ├── index.html
-│   └── src/
-└── backend/
-    ├── requirements.txt
-    └── app/
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
 ```
 
-## Backend Responsibilities
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
-The FastAPI backend should own:
+## 5. Explain Like I'm Learning
 
-- onboarding preference persistence
-- ranked experience retrieval
-- single experience detail retrieval
-- swipe recording
-- collection creation and retrieval
-- weather aggregation
-- condition evaluation
+**The user is learning. Explain every concept at a child-friendly level.**
 
-Target API surface for MVP:
+When introducing or touching any technical concept:
+- Use plain, everyday language. Avoid jargon; when a technical term is unavoidable, define it in one short sentence.
+- Use simple analogies to ground abstract ideas.
+- Break explanations into small steps. One idea per sentence when possible.
+- Show *why* something matters before *how* it works.
+- After explaining, give a tiny concrete example the user can picture.
+- It is okay to be repetitive across sessions — assume the user is still building intuition.
 
-- `POST /api/preferences`
-- `GET /api/experiences`
-- `GET /api/experiences/{id}`
-- `POST /api/swipe`
-- `GET /api/collections`
-- `POST /api/collections`
-- `POST /api/collections/{id}/add`
-- `GET /api/weather`
+Apply this whenever you:
+- Introduce a new library, framework, or pattern.
+- Use a term like "state", "API", "async", "component", "hook", "endpoint", etc.
+- Make a design decision the user might not have seen before.
 
-## Frontend Responsibilities
+---
 
-The React frontend should own:
-
-- onboarding flow
-- swipe card stack
-- detail modal or detail page
-- collection views
-- loading and empty states
-- mobile-first UX and transitions
-
-## Data Model Guidance
-
-MVP data should center around:
-
-- `Experience`
-- `UserPreferences`
-- `SwipeRecord`
-- `PreferenceVector`
-- `Collection`
-
-Keep models simple and serializable so they can be stored as JSON during the hackathon phase.
-
-## Build Priorities
-
-1. Create the monorepo foundation.
-2. Implement onboarding and app shell.
-3. Seed experience data for the Madison, WI region.
-4. Build swipe interactions and detail view.
-5. Add condition badges and ranking logic.
-6. Add collections and persistence.
-7. Polish mobile responsiveness and demo flows.
-
-## Engineering Notes
-
-- Optimize for demo reliability over feature breadth.
-- Prefer pre-generated seed content over runtime-heavy generation.
-- Cache weather lookups when possible.
-- Do not block the swipe flow on optional services.
-- Keep API contracts stable and explicit between `frontend` and `backend`.
+**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
