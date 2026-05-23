@@ -84,7 +84,7 @@ export function WelcomeScreen({ onContinueWithGoogle, authBusy }) {
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 999, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.14)", marginBottom: 22, fontSize: 12, letterSpacing: 1.2, textTransform: "uppercase", color: "rgba(255,255,255,0.8)" }}>
               Today’s field guide
             </div>
-            <h1 style={{ fontFamily: "'Libre Baskerville', serif", fontSize: 60, lineHeight: 1.02, letterSpacing: -1.2, margin: "0 0 18px" }}>
+            <h1 style={{ fontFamily: "'Libre Baskerville', serif", fontSize: "clamp(40px, 5vw, 60px)", lineHeight: 1.02, letterSpacing: -1.2, margin: "0 0 18px" }}>
               Open the app and know what fits today.
             </h1>
             <p style={{ maxWidth: 460, margin: 0, fontSize: 17, lineHeight: 1.8, color: "rgba(235,247,241,0.82)" }}>

@@ -292,12 +292,19 @@ export default function App() {
 
     let mounted = true;
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return;
-      setSession(data.session ?? null);
-      setAuthReady(true);
-      setScreen(data.session ? "onboarding" : "welcome");
-    });
+    supabase.auth.getSession()
+      .then(({ data }) => {
+        if (!mounted) return;
+        setSession(data.session ?? null);
+        setAuthReady(true);
+        setScreen(data.session ? "onboarding" : "welcome");
+      })
+      .catch((err) => {
+        console.error("Supabase getSession failed", err);
+        if (!mounted) return;
+        setAuthReady(true);
+        setScreen("welcome");
+      });
 
     const {
       data: { subscription },
