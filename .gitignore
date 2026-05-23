@@ -45,3 +45,5 @@ coverage/
 # Misc
 tmp/
 *.swp
+
+PROJECT.md
