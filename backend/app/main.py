@@ -1,14 +1,12 @@
-import os
 import time
 from collections import defaultdict
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import anthropic
 
-load_dotenv()
+from app.core.config import settings
 
 app = FastAPI(
     title="Drift API",
@@ -28,8 +26,8 @@ app.add_middleware(
 )
 
 
-RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "5"))
-RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+RATE_LIMIT_MAX_REQUESTS = settings.rate_limit_max_requests
+RATE_LIMIT_WINDOW_SECONDS = settings.rate_limit_window_seconds
 
 _request_log: dict[str, list[float]] = defaultdict(list)
 
@@ -71,7 +69,7 @@ def list_experiences() -> dict[str, list]:
 @app.post("/api/plan-trip")
 async def plan_trip(req: TripPlanRequest, request: Request):
     _check_rate_limit(request.client.host)
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    api_key = settings.anthropic_api_key
     if not api_key:
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
 

@@ -1,5 +1,9 @@
 fastapi
 uvicorn[standard]
 pydantic
+pydantic-settings
 anthropic
 python-dotenv
+sqlmodel
+psycopg[binary]
+alembic
