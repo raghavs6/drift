@@ -7,3 +7,5 @@ python-dotenv
 sqlmodel
 psycopg[binary]
 alembic
+pytest
+httpx

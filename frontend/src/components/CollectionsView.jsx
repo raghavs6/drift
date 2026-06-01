@@ -4,8 +4,7 @@ import { Tag, ConditionBadge } from "./ui.jsx";
 import { CardImage } from "./CardImage.jsx";
 import { formatInsightLine, getCollectionSummary, getWhyForYou, getWhyNow } from "../lib/insights.js";
 import { Drifty } from "./Drifty.jsx";
-
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+import { planTrip } from "../lib/api.js";
 
 function parseTravelMinutes(label = "") {
   const text = String(label).toLowerCase();
@@ -105,24 +104,16 @@ function TripPlanModal({ experience, onClose }) {
     setError(null);
     setUsingFallback(false);
 
-    fetch(`${API_BASE}/api/plan-trip`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: experience.title,
-        category: experience.categoryLabel,
-        distance: experience.distance,
-        difficulty: experience.difficulty,
-        cost: experience.cost,
-        description: experience.subtitle || experience.description,
-        location: experience.location,
-        tags: experience.tags,
-      }),
+    planTrip({
+      title: experience.title,
+      category: experience.categoryLabel,
+      distance: experience.distance,
+      difficulty: experience.difficulty,
+      cost: experience.cost,
+      description: experience.subtitle || experience.description,
+      location: experience.location,
+      tags: experience.tags,
     })
-      .then((res) => {
-        if (!res.ok) throw new Error(`Trip planner returned ${res.status}`);
-        return res.json();
-      })
       .then((data) => {
         if (!cancelled) setPlan(data.plan);
       })
