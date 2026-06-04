@@ -28,6 +28,10 @@ class Experience(SQLModel, table=True):
     condition_score: float | None = None
     what_to_bring: list[str] = Field(default_factory=list, sa_column=Column(JSONB, nullable=False, server_default="[]"))
     images: list[str] = Field(default_factory=list, sa_column=Column(JSONB, nullable=False, server_default="[]"))
+    source: str | None = None
+    source_id: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )

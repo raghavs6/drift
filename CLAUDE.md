@@ -1,1 +1,2 @@
 read AGENT.MD
+i dont want you to write code. I want you to guide me through architectural changes and explain them for me tounderstand and explain tradeoffs. I also want you to create structured prompts for me to use for other agents.

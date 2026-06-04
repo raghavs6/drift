@@ -6,6 +6,8 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://drift:drift@localhost:5432/drift"
     anthropic_api_key: str | None = None
+    ridb_api_key: str | None = None
+    nps_api_key: str | None = None
     rate_limit_max_requests: int = 5
     rate_limit_window_seconds: int = 60
 

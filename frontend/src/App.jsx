@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import rawExperiencesMidwest from "./data/experiences.json";
 import { normalizeExperiences } from "./data/normalizeExperiences.js";
 import { SwipeView } from "./components/SwipeView.jsx";
 import { WelcomeScreen } from "./components/WelcomeScreen.jsx";
@@ -12,10 +11,9 @@ import { CATEGORIES, DEFAULT_LOCATION, getLocationOptions } from "./lib/appConst
 import { buildDiscoverDeck, mergePrefs, DEFAULT_PREFS } from "./lib/discoverDeck.js";
 import { loadPersistedState, savePersistedState } from "./lib/persistence.js";
 import { fetchWeatherForLocation } from "./lib/weather.js";
+import { fetchExperiences } from "./lib/api.js";
 import { supabase, hasSupabaseConfig } from "./supabase.js";
 import { C } from "./theme/palette.js";
-
-const SEEDED_EXPERIENCES = normalizeExperiences(rawExperiencesMidwest);
 
 const DEFAULT_COLLECTIONS = [
   { id: "saved", label: "Saved", icon: "💚", itemIds: [] },
@@ -111,7 +109,7 @@ export default function App() {
   const [screen, setScreen] = useState("onboarding");
   const [tab, setTab] = useState("discover");
   const [prefs, setPrefs] = useState(() => mergePrefs(null));
-  const [experiences, setExperiences] = useState(SEEDED_EXPERIENCES);
+  const [experiences, setExperiences] = useState([]);
   const [collections, setCollections] = useState(() => normalizeCollections(null, []));
   const [skippedIds, setSkippedIds] = useState([]);
   const [detailExp, setDetailExp] = useState(null);
@@ -282,6 +280,25 @@ export default function App() {
     link.href = "https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@400;500&display=swap";
     link.rel = "stylesheet";
     document.head.appendChild(link);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    fetchExperiences()
+      .then((items) => {
+        if (!mounted) return;
+        setExperiences(normalizeExperiences(items));
+      })
+      .catch((err) => {
+        console.error("Failed to load experiences", err);
+        if (!mounted) return;
+        setExperiences([]);
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {

@@ -1,12 +1,15 @@
 import time
 from collections import defaultdict
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlmodel import Session, select
 import anthropic
 
 from app.core.config import settings
+from app.core.database import get_session
+from app.models.experience import Experience
 
 app = FastAPI(
     title="Drift API",
@@ -62,8 +65,20 @@ def health_check() -> dict[str, str]:
 
 
 @app.get("/api/experiences")
-def list_experiences() -> dict[str, list]:
-    return {"items": []}
+def list_experiences(session: Session = Depends(get_session)) -> dict[str, list]:
+    experiences = session.exec(select(Experience).order_by(Experience.title)).all()
+    return {"items": [_experience_payload(experience) for experience in experiences]}
+
+
+def _experience_payload(experience: Experience) -> dict:
+    item = experience.model_dump()
+    item["categoryLabel"] = experience.category_label
+    item["conditionType"] = experience.condition_type
+    item["kidFriendly"] = experience.kid_friendly
+    item["minAge"] = experience.min_age
+    item["conditionScore"] = experience.condition_score
+    item["whatToBring"] = experience.what_to_bring
+    return item
 
 
 @app.post("/api/plan-trip")
