@@ -44,6 +44,7 @@ REQUIRED_FIELDS = [
     "title",
     "hook",
     "location",
+    "state",
     "distance",
     "difficulty",
     "cost",
@@ -86,6 +87,7 @@ def test_ridb_to_experience_populates_required_fields():
     assert experience["latitude"] == 43.0731
     assert experience["longitude"] == -89.4012
     assert experience["category"] == "water"
+    assert experience["state"] == "WI"
 
 
 def test_nps_to_experience_populates_required_fields():
@@ -97,6 +99,7 @@ def test_nps_to_experience_populates_required_fields():
     assert experience["latitude"] == 43.0731
     assert experience["longitude"] == -89.4012
     assert experience["description"] == "Official NPS description wins when records overlap."
+    assert experience["state"] == "WI"
 
 
 def test_merge_prefers_nps_detail_and_keeps_ridb_id():

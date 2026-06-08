@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
 import app.main as main
 from app.main import app
@@ -33,6 +34,7 @@ def test_list_experiences_shape():
                     title="Test Park",
                     hook="A scenic test park",
                     location="Madison, WI",
+                    state="WI",
                     distance="1 hr",
                     difficulty="Moderate",
                     cost="Free",
@@ -72,6 +74,78 @@ def test_list_experiences_shape():
     assert body["items"][0]["title"] == "Test Park"
     assert body["items"][0]["categoryLabel"] == "Hiking"
     assert body["items"][0]["whatToBring"] == ["Water"]
+
+
+def test_list_experiences_applies_filters_and_limit():
+    captured = {}
+
+    class FakeResult:
+        def all(self):
+            return []
+
+    class FakeSession:
+        def exec(self, statement):
+            captured["statement"] = statement
+            return FakeResult()
+
+    def override_get_session():
+        yield FakeSession()
+
+    app.dependency_overrides[get_session] = override_get_session
+    res = client.get(
+        "/api/experiences",
+        params={
+            "category": "hiking",
+            "state": "WI",
+            "difficulty": "Easy",
+            "kid_friendly": "false",
+            "limit": 25,
+        },
+    )
+    app.dependency_overrides.clear()
+
+    assert res.status_code == 200
+    compiled = captured["statement"].compile(
+        dialect=postgresql.dialect(),
+        compile_kwargs={"literal_binds": True},
+    )
+    sql = str(compiled)
+    assert "experiences.category = 'hiking'" in sql
+    assert "experiences.state = 'WI'" in sql
+    assert "experiences.difficulty = 'Easy'" in sql
+    assert "experiences.kid_friendly = false" in sql
+    assert "ORDER BY experiences.title" in sql
+    assert "LIMIT 25" in sql
+
+
+def test_list_experiences_uses_default_limit():
+    captured = {}
+
+    class FakeResult:
+        def all(self):
+            return []
+
+    class FakeSession:
+        def exec(self, statement):
+            captured["statement"] = statement
+            return FakeResult()
+
+    def override_get_session():
+        yield FakeSession()
+
+    app.dependency_overrides[get_session] = override_get_session
+    res = client.get("/api/experiences")
+    app.dependency_overrides.clear()
+
+    assert res.status_code == 200
+    assert captured["statement"]._limit_clause.value == 100
+
+
+@pytest.mark.parametrize("limit", [0, 501])
+def test_list_experiences_rejects_out_of_range_limit(limit):
+    res = client.get("/api/experiences", params={"limit": limit})
+
+    assert res.status_code == 422
 
 
 def test_plan_trip_requires_title():

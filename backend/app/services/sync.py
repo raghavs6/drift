@@ -233,6 +233,7 @@ def _base_experience(raw: dict, *, title: str, state: str | None, source: str, s
         "title": title,
         "hook": hook,
         "location": location,
+        "state": state,
         "distance": first_defined(raw.get("distance"), raw.get("driveTime"), raw.get("DistanceLabel"), "1 hr"),
         "difficulty": first_defined(raw.get("difficulty"), raw.get("difficultyLabel"), raw.get("Difficulty"), "Moderate"),
         "cost": first_defined(raw.get("cost"), raw.get("priceLabel"), raw.get("FeeDescription"), "Free"),
@@ -251,7 +252,6 @@ def _base_experience(raw: dict, *, title: str, state: str | None, source: str, s
         "images": pick_images(raw, category),
         "source": source,
         "source_id": source_id,
-        "_dedupe_state": state,
     }
 
 
@@ -293,7 +293,7 @@ def _first_activity_name(raw: dict) -> str | None:
 
 
 def dedupe_key(experience: dict) -> str:
-    state = experience.pop("_dedupe_state", None)
+    state = experience.get("state")
     if not state:
         location = experience.get("location") or ""
         state = location.rsplit(",", 1)[-1].strip() if "," in location else location

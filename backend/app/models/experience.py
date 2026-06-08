@@ -12,12 +12,13 @@ class Experience(SQLModel, table=True):
     title: str
     hook: str | None = None
     location: str | None = None
+    state: str | None = Field(default=None, index=True)
     distance: str | None = None
     difficulty: str | None = None
     cost: str | None = None
     time: str | None = None
     season: str | None = None
-    category: str | None = None
+    category: str | None = Field(default=None, index=True)
     category_label: str | None = None
     description: str | None = None
     description2: str | None = None

@@ -1,7 +1,7 @@
 import time
 from collections import defaultdict
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -65,8 +65,26 @@ def health_check() -> dict[str, str]:
 
 
 @app.get("/api/experiences")
-def list_experiences(session: Session = Depends(get_session)) -> dict[str, list]:
-    experiences = session.exec(select(Experience).order_by(Experience.title)).all()
+def list_experiences(
+    category: str | None = None,
+    state: str | None = None,
+    difficulty: str | None = None,
+    kid_friendly: bool | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    session: Session = Depends(get_session),
+) -> dict[str, list]:
+    statement = select(Experience)
+    if category is not None:
+        statement = statement.where(Experience.category == category)
+    if state is not None:
+        statement = statement.where(Experience.state == state)
+    if difficulty is not None:
+        statement = statement.where(Experience.difficulty == difficulty)
+    if kid_friendly is not None:
+        statement = statement.where(Experience.kid_friendly == kid_friendly)
+
+    statement = statement.order_by(Experience.title).limit(limit)
+    experiences = session.exec(statement).all()
     return {"items": [_experience_payload(experience) for experience in experiences]}
 
 
