@@ -80,4 +80,18 @@ Apply this whenever you:
 
 ---
 
+## Review guidelines
+
+Used by the Codex PR-review workflow (`.github/workflows/codex-review.yml`). Report only
+the two highest severities so reviews stay focused:
+
+- **P0 (critical):** logging or storing user PII; missing auth checks on a new route;
+  secrets/keys committed to the repo; anything that breaks the build.
+- **P1 (important):** new logic added without tests; unhandled error paths on user input;
+  obvious correctness bugs in the diff.
+
+Skip style nitpicks, formatting, and pre-existing issues outside the diff.
+
+---
+
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
