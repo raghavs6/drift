@@ -5,6 +5,7 @@ pydantic-settings
 anthropic
 python-dotenv
 sqlmodel
+pyjwt
 psycopg[binary]
 alembic
 pytest

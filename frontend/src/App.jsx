@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { normalizeExperiences } from "./data/normalizeExperiences.js";
 import { SwipeView } from "./components/SwipeView.jsx";
 import { WelcomeScreen } from "./components/WelcomeScreen.jsx";
@@ -11,7 +11,15 @@ import { CATEGORIES, DEFAULT_LOCATION, getLocationOptions } from "./lib/appConst
 import { buildDiscoverDeck, mergePrefs, DEFAULT_PREFS } from "./lib/discoverDeck.js";
 import { loadPersistedState, savePersistedState } from "./lib/persistence.js";
 import { fetchWeatherForLocation } from "./lib/weather.js";
-import { fetchExperiences } from "./lib/api.js";
+import {
+  fetchExperiences,
+  getPreferences,
+  putPreferences,
+  getSwipes,
+  recordSwipe,
+  getCollections,
+  putCollections,
+} from "./lib/api.js";
 import { supabase, hasSupabaseConfig } from "./supabase.js";
 import { C } from "./theme/palette.js";
 
@@ -129,6 +137,21 @@ export default function App() {
     [collections],
   );
   const currentUserId = session?.user?.id || "local-guest";
+  const accessToken = session?.access_token || null;
+  const isServerBacked = hasSupabaseConfig && Boolean(accessToken);
+  // Guards the server-write effects so they don't fire (and wipe server data)
+  // before the initial load has finished.
+  const hydratedRef = useRef(false);
+
+  const syncSwipe = useCallback(
+    (experienceId, action) => {
+      if (!isServerBacked) return;
+      recordSwipe(accessToken, experienceId, action).catch((err) =>
+        console.error("Failed to record swipe", err),
+      );
+    },
+    [isServerBacked, accessToken],
+  );
 
   const locationOptions = useMemo(() => getLocationOptions(experiences), [experiences]);
 
@@ -162,11 +185,13 @@ export default function App() {
           : collection,
       ),
     );
-  }, []);
+    syncSwipe(id, "save");
+  }, [syncSwipe]);
 
   const handleSkip = useCallback((id) => {
     setSkippedIds((current) => (current.includes(id) ? current : [...current, id]));
-  }, []);
+    syncSwipe(id, "skip");
+  }, [syncSwipe]);
 
   const handleCreateCollection = useCallback((label) => {
     const trimmed = label.trim();
@@ -214,10 +239,11 @@ export default function App() {
   const handleSwipeSave = useCallback((id) => {
     if (swipeCollectionId && swipeCollectionId !== "saved") {
       handleAddToCollection(swipeCollectionId, id);
+      syncSwipe(id, "save");
       return;
     }
     handleSave(id);
-  }, [handleAddToCollection, handleSave, swipeCollectionId]);
+  }, [handleAddToCollection, handleSave, swipeCollectionId, syncSwipe]);
 
   const handleRemoveFromCollection = useCallback((collectionId, experienceId) => {
     setCollections((current) =>
@@ -274,6 +300,29 @@ export default function App() {
       skippedIds,
     }, currentUserId);
   }, [screen, prefs, collections, savedIds, skippedIds, currentUserId]);
+
+  // Mirror prefs to the backend for signed-in users (server owns the data).
+  useEffect(() => {
+    if (!isServerBacked || !hydratedRef.current) return;
+    putPreferences(accessToken, {
+      location: prefs.location,
+      distance: prefs.distance,
+      age: prefs.age,
+      comfort: prefs.comfort,
+      kidFriendly: prefs.kidFriendly,
+      childAge: prefs.childAge,
+      vibes: prefs.vibes,
+      onboardingComplete: screen === "main",
+    }).catch((err) => console.error("Failed to sync preferences", err));
+  }, [prefs, screen, isServerBacked, accessToken]);
+
+  // Mirror collections to the backend for signed-in users.
+  useEffect(() => {
+    if (!isServerBacked || !hydratedRef.current) return;
+    putCollections(accessToken, collections).catch((err) =>
+      console.error("Failed to sync collections", err),
+    );
+  }, [collections, isServerBacked, accessToken]);
 
   useEffect(() => {
     const link = document.createElement("link");
@@ -343,15 +392,50 @@ export default function App() {
     if (!authReady) return;
     if (hasSupabaseConfig && !session) return;
 
-    const persisted = loadPersistedState(currentUserId);
-    setPrefs(mergePrefs(persisted?.prefs));
-    setCollections(normalizeCollections(persisted?.collections, persisted?.savedIds));
-    setSkippedIds(persisted?.skippedIds ?? []);
+    hydratedRef.current = false;
+    let cancelled = false;
+
+    function applyLocal() {
+      const persisted = loadPersistedState(currentUserId);
+      setPrefs(mergePrefs(persisted?.prefs));
+      setCollections(normalizeCollections(persisted?.collections, persisted?.savedIds));
+      setSkippedIds(persisted?.skippedIds ?? []);
+      setScreen(persisted?.onboardingComplete ? "main" : "onboarding");
+    }
+
+    async function hydrate() {
+      if (isServerBacked) {
+        try {
+          const [prefsRes, collectionsRes, swipesRes] = await Promise.all([
+            getPreferences(accessToken),
+            getCollections(accessToken),
+            getSwipes(accessToken),
+          ]);
+          if (cancelled) return;
+          setPrefs(mergePrefs(prefsRes));
+          setCollections(normalizeCollections(collectionsRes.collections, []));
+          setSkippedIds(swipesRes.skippedIds ?? []);
+          setScreen(prefsRes.onboardingComplete ? "main" : "onboarding");
+        } catch (err) {
+          console.error("Failed to load server data; using local cache", err);
+          if (cancelled) return;
+          applyLocal();
+        }
+      } else {
+        applyLocal();
+      }
+      if (!cancelled) hydratedRef.current = true;
+    }
+
     setTab("discover");
     setDetailExp(null);
     setSwipeCollectionId("saved");
     setShowPreferences(false);
-    setScreen(persisted?.onboardingComplete ? "main" : "onboarding");
+    hydrate();
+
+    return () => {
+      cancelled = true;
+    };
   }, [authReady, currentUserId, session]);
 
   useEffect(() => {
