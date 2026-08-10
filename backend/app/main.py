@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 import anthropic
 
+from app.api import collections_router, preferences_router, swipes_router
 from app.core.config import settings
 from app.core.database import get_session
 from app.models.experience import Experience
@@ -27,6 +28,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(preferences_router)
+app.include_router(swipes_router)
+app.include_router(collections_router)
 
 
 RATE_LIMIT_MAX_REQUESTS = settings.rate_limit_max_requests
