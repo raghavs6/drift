@@ -32,6 +32,20 @@ function sanitizeItemIds(ids) {
   return Array.isArray(ids) ? [...new Set(ids.filter(Boolean))] : [];
 }
 
+/** The exact body `PUT /api/preferences` expects, shared by the sync effect and its guard. */
+function buildPrefsPayload(prefs, onboardingComplete) {
+  return {
+    location: prefs.location,
+    distance: prefs.distance,
+    age: prefs.age,
+    comfort: prefs.comfort,
+    kidFriendly: prefs.kidFriendly,
+    childAge: prefs.childAge,
+    vibes: prefs.vibes,
+    onboardingComplete,
+  };
+}
+
 function normalizeCollections(rawCollections, legacySavedIds = []) {
   const legacySaved = sanitizeItemIds(legacySavedIds);
   const baseCollections = DEFAULT_COLLECTIONS.map((collection) => ({
@@ -142,6 +156,10 @@ export default function App() {
   // Guards the server-write effects so they don't fire (and wipe server data)
   // before the initial load has finished.
   const hydratedRef = useRef(false);
+  // Last payload each sync effect knows the server already has, serialized. Lets the
+  // effects skip writes that would change nothing — notably the echo right after a load.
+  const lastSyncedPrefsRef = useRef(null);
+  const lastSyncedCollectionsRef = useRef(null);
 
   const syncSwipe = useCallback(
     (experienceId, action) => {
@@ -304,24 +322,29 @@ export default function App() {
   // Mirror prefs to the backend for signed-in users (server owns the data).
   useEffect(() => {
     if (!isServerBacked || !hydratedRef.current) return;
-    putPreferences(accessToken, {
-      location: prefs.location,
-      distance: prefs.distance,
-      age: prefs.age,
-      comfort: prefs.comfort,
-      kidFriendly: prefs.kidFriendly,
-      childAge: prefs.childAge,
-      vibes: prefs.vibes,
-      onboardingComplete: screen === "main",
-    }).catch((err) => console.error("Failed to sync preferences", err));
+    const payload = buildPrefsPayload(prefs, screen === "main");
+    const serialized = JSON.stringify(payload);
+    if (serialized === lastSyncedPrefsRef.current) return;
+
+    lastSyncedPrefsRef.current = serialized;
+    putPreferences(accessToken, payload).catch((err) => {
+      // The server didn't take it, so stop claiming it did — let the next change retry.
+      lastSyncedPrefsRef.current = null;
+      console.error("Failed to sync preferences", err);
+    });
   }, [prefs, screen, isServerBacked, accessToken]);
 
   // Mirror collections to the backend for signed-in users.
   useEffect(() => {
     if (!isServerBacked || !hydratedRef.current) return;
-    putCollections(accessToken, collections).catch((err) =>
-      console.error("Failed to sync collections", err),
-    );
+    const serialized = JSON.stringify(collections);
+    if (serialized === lastSyncedCollectionsRef.current) return;
+
+    lastSyncedCollectionsRef.current = serialized;
+    putCollections(accessToken, collections).catch((err) => {
+      lastSyncedCollectionsRef.current = null;
+      console.error("Failed to sync collections", err);
+    });
   }, [collections, isServerBacked, accessToken]);
 
   useEffect(() => {
@@ -393,6 +416,8 @@ export default function App() {
     if (hasSupabaseConfig && !session) return;
 
     hydratedRef.current = false;
+    lastSyncedPrefsRef.current = null;
+    lastSyncedCollectionsRef.current = null;
     let cancelled = false;
 
     function applyLocal() {
@@ -412,14 +437,24 @@ export default function App() {
             getSwipes(accessToken),
           ]);
           if (cancelled) return;
-          setPrefs(mergePrefs(prefsRes));
-          setCollections(normalizeCollections(collectionsRes.collections, []));
+          const nextPrefs = mergePrefs(prefsRes);
+          const nextCollections = normalizeCollections(collectionsRes.collections, []);
+          // Record what the server already has so the effects below don't echo it straight back.
+          lastSyncedPrefsRef.current = JSON.stringify(
+            buildPrefsPayload(nextPrefs, Boolean(prefsRes.onboardingComplete)),
+          );
+          lastSyncedCollectionsRef.current = JSON.stringify(nextCollections);
+          setPrefs(nextPrefs);
+          setCollections(nextCollections);
           setSkippedIds(swipesRes.skippedIds ?? []);
           setScreen(prefsRes.onboardingComplete ? "main" : "onboarding");
         } catch (err) {
           console.error("Failed to load server data; using local cache", err);
           if (cancelled) return;
           applyLocal();
+          // Leave hydratedRef false: never push the local cache over server data we
+          // failed to read.
+          return;
         }
       } else {
         applyLocal();
