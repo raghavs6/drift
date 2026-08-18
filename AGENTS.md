@@ -78,6 +78,18 @@ Apply this whenever you:
 - Use a term like "state", "API", "async", "component", "hook", "endpoint", etc.
 - Make a design decision the user might not have seen before.
 
+## 6. Git Remotes
+
+**Push to `origin` only. Never push to `upstream`.**
+
+- `origin` = `raghavs6/drift` — the active repo. All pushes and PRs go here.
+- `upstream` = `vallabvis/CursorHackathon26` — stale and not a fork of drift. Read-only:
+  fetching and diffing against it is fine, pushing to it is not.
+- `gh` resolves to `upstream` by default. Always pass `--repo raghavs6/drift` — a bare
+  `gh pr list` or `gh pr create` will silently target the wrong repo.
+- Run `git fetch origin` before judging how far ahead a branch is; a stale `origin/main`
+  inflates the count.
+
 ---
 
 ## Review guidelines
