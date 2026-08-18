@@ -1,8 +1,10 @@
 name: CI
 
+# Pull requests are covered by the pull_request trigger, so push is limited to
+# main. Triggering on both for every branch runs each job twice per PR.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
 
 jobs:
