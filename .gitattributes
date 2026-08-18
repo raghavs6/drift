@@ -1,0 +1,12 @@
+# GitHub language statistics (Linguist) only — this file changes nothing about
+# how the code builds or runs.
+#
+# The web client is first-party code and stays in the repo. Excluding it from
+# language detection keeps the repo-page language bar reflecting the backend,
+# where the substantive engineering lives (FastAPI, Postgres, the ingest
+# pipeline). `-linguist-detectable` rather than `linguist-vendored` because
+# "vendored" means third-party code checked in, which this is not.
+frontend/** -linguist-detectable
+
+# Generated. Excluded from stats and, unlike the above, collapsed in diffs.
+frontend/package-lock.json linguist-generated
