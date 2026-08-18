@@ -1,12 +1,15 @@
-fastapi
-uvicorn[standard]
-pydantic
-pydantic-settings
-anthropic
-python-dotenv
-sqlmodel
-pyjwt
-psycopg[binary]
-alembic
-pytest
-httpx
+# Pinned to the versions the test suite is green against. Unpinned, a fresh
+# install (CI, a new machine) silently resolves to different releases than the
+# ones this code was verified with.
+fastapi==0.135.3
+uvicorn[standard]==0.44.0
+pydantic==2.12.5
+pydantic-settings==2.14.1
+anthropic==0.94.0
+python-dotenv==1.2.2
+sqlmodel==0.0.38
+pyjwt==2.13.0
+psycopg[binary]==3.3.4
+alembic==1.18.4
+pytest==9.0.3
+httpx==0.28.1
