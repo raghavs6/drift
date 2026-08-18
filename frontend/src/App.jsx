@@ -90,6 +90,24 @@ function normalizeCollections(rawCollections, legacySavedIds = []) {
   ];
 }
 
+/**
+ * Remove one experience from one collection, leaving every other collection alone.
+ *
+ * Exported for tests. This previously stripped the item from *every* collection
+ * whenever `collectionId` was "saved", because the guard tested the argument
+ * rather than the collection currently being mapped over.
+ */
+export function removeItemFromCollection(collections, collectionId, experienceId) {
+  return collections.map((collection) =>
+    collection.id === collectionId
+      ? {
+          ...collection,
+          itemIds: collection.itemIds.filter((id) => id !== experienceId),
+        }
+      : collection,
+  );
+}
+
 function makeCollectionId(name) {
   return `collection-${name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "custom"}-${Date.now()}`;
 }
@@ -264,26 +282,7 @@ export default function App() {
   }, [handleAddToCollection, handleSave, swipeCollectionId, syncSwipe]);
 
   const handleRemoveFromCollection = useCallback((collectionId, experienceId) => {
-    setCollections((current) =>
-      current
-        .map((collection) => {
-          if (collectionId === "saved") {
-            return {
-              ...collection,
-              itemIds: collection.itemIds.filter((id) => id !== experienceId),
-            };
-          }
-
-          if (collection.id !== collectionId) {
-            return collection;
-          }
-
-          return {
-            ...collection,
-            itemIds: collection.itemIds.filter((id) => id !== experienceId),
-          };
-        }),
-    );
+    setCollections((current) => removeItemFromCollection(current, collectionId, experienceId));
   }, []);
 
   const handleDeleteCollection = useCallback((collectionId) => {
