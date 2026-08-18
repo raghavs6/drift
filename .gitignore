@@ -45,6 +45,7 @@ coverage/
 # Misc
 tmp/
 *.swp
+*.profraw
 
 PROJECT.md
 NOTES.md
