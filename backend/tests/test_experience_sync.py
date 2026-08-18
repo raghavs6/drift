@@ -128,3 +128,22 @@ def test_fetch_parks_wi_returns_raw_list():
 
     assert parks
     assert isinstance(parks[0], dict)
+
+
+def test_source_index_is_declared_on_the_model():
+    """The sync upsert's ON CONFLICT target must live in SQLModel.metadata.
+
+    ix_experiences_source_source_id was created by migration 0002 but never
+    declared on the Experience model. `alembic revision --autogenerate` compares
+    the DB against the model metadata, so it would emit a drop_index for it --
+    and the next sync would silently insert duplicates instead of upserting.
+    """
+    from app.models.experience import Experience
+
+    index = next(
+        (ix for ix in Experience.__table__.indexes if ix.name == "ix_experiences_source_source_id"),
+        None,
+    )
+    assert index is not None, "index missing from the model; autogenerate would drop it"
+    assert index.unique is True
+    assert [c.name for c in index.columns] == ["source", "source_id"]

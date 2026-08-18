@@ -40,7 +40,12 @@ def get_current_user(
     token = authorization.split(" ", 1)[1].strip()
     claims = _decode_token(token)
 
-    user_id = UUID(claims["sub"])
+    try:
+        user_id = UUID(claims["sub"])
+    except (KeyError, TypeError, ValueError):
+        # Same detail as a signature failure: don't reveal which check tripped.
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
     email = claims.get("email")
 
     user = session.get(User, user_id)
