@@ -7,6 +7,7 @@ from sqlmodel import Session, delete, select
 from app.core.auth import get_current_user
 from app.core.database import get_session
 from app.models.collection import Collection, CollectionItem
+from app.models.experience import Experience
 from app.models.user import User
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])
@@ -30,13 +31,22 @@ class CollectionsPayload(BaseModel):
     collections: list[CollectionPayload]
 
 
+class PutCollectionsResult(BaseModel):
+    status: str = "ok"
+    # Ids that referenced experiences no longer in the catalog. They are skipped
+    # rather than rejected: a full-replace PUT carrying one dead id would
+    # otherwise become a poison pill that permanently breaks that user's sync.
+    droppedIds: list[str] = []
+
+
 def _db_id(user_id: UUID, frontend_id: str) -> str:
     """Namespace a frontend collection id under the user so ids are globally unique."""
     return f"{user_id}:{frontend_id}"
 
 
 def _frontend_id(db_id: str) -> str:
-    return db_id.split(":", 1)[1]
+    """Strip the `{user_id}:` namespace. Tolerates an id stored without one."""
+    return db_id.split(":", 1)[-1]
 
 
 @router.get("")
@@ -80,7 +90,7 @@ def put_collections(
     payload: CollectionsPayload,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
-) -> dict[str, str]:
+) -> PutCollectionsResult:
     """Replace all of the user's collections with the posted set."""
     existing = session.exec(
         select(Collection.id).where(Collection.user_id == user.id)
@@ -91,13 +101,26 @@ def put_collections(
         )
         session.exec(delete(Collection).where(Collection.user_id == user.id))
 
+    # CollectionItem.experience_id is a foreign key, so an id missing from the
+    # catalog would abort the whole transaction with an IntegrityError (a 500).
+    # Check once up front and skip the strays instead.
+    posted_ids = {eid for c in payload.collections for eid in c.itemIds}
+    known_ids: set[str] = set()
+    if posted_ids:
+        known_ids = set(
+            session.exec(select(Experience.id).where(Experience.id.in_(posted_ids))).all()
+        )
+    dropped = posted_ids - known_ids
+
     for c in payload.collections:
         db_id = _db_id(user.id, c.id)
         session.add(Collection(id=db_id, user_id=user.id, label=c.label, icon=c.icon))
         for experience_id in dict.fromkeys(c.itemIds):
+            if experience_id not in known_ids:
+                continue
             session.add(
                 CollectionItem(collection_id=db_id, experience_id=experience_id)
             )
 
     session.commit()
-    return {"status": "ok"}
+    return PutCollectionsResult(droppedIds=sorted(dropped))
