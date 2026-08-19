@@ -148,6 +148,9 @@ export function DetailView({
                       experience.images[(index + 1) % 3],
                       experience.images[(index + 2) % 3],
                     ],
+                    photos: experience.photos?.length
+                      ? [experience.photos[index % experience.photos.length]]
+                      : [],
                   }}
                 />
               </div>
