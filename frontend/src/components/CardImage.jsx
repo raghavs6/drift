@@ -1,4 +1,27 @@
+import { useState } from "react";
+
 export function CardImage({ experience, style }) {
+  const photo = experience.photos?.[0];
+  const [photoFailed, setPhotoFailed] = useState(false);
+
+  if (photo && !photoFailed) {
+    return (
+      <img
+        src={photo}
+        alt={experience.title}
+        loading="lazy"
+        onError={() => setPhotoFailed(true)}
+        style={{
+          width: "100%",
+          display: "block",
+          objectFit: "cover",
+          borderRadius: "inherit",
+          ...style,
+        }}
+      />
+    );
+  }
+
   const [c1, c2, c3] = experience.images;
   return (
     <svg

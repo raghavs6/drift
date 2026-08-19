@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { C } from "../theme/palette.js";
 import { CardImage } from "./CardImage.jsx";
 import { SectionLabel, Tag, ConditionBadge } from "./ui.jsx";
-import { formatInsightLine, getDeckNarrative, getWhyForYou, getWhyNow } from "../lib/insights.js";
+import { formatInsightLine, getWhyForYou } from "../lib/insights.js";
 import { Drifty } from "./Drifty.jsx";
 
 function SwipeButton({ icon, label, borderColor, onClick, size = 58, fontSize = 22, fill }) {
@@ -105,29 +105,6 @@ function DashboardCard({ title, children, accent, contentStyle }) {
   );
 }
 
-function InsightBlock({ label, text }) {
-  return (
-    <div>
-      <div style={{ fontSize: 11, color: C.textSoft, textTransform: "uppercase", letterSpacing: 1.1, marginBottom: 6 }}>
-        {label}
-      </div>
-      <div
-        style={{
-          fontSize: 12,
-          color: C.text,
-          lineHeight: 1.6,
-          display: "-webkit-box",
-          WebkitLineClamp: 4,
-          WebkitBoxOrient: "vertical",
-          overflow: "hidden",
-        }}
-      >
-        {text}
-      </div>
-    </div>
-  );
-}
-
 function DriftyTip({ text }) {
   return (
     <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -153,45 +130,6 @@ function DriftyTip({ text }) {
         <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
           {text}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function FloatingNote({ title, text, align = "left", tone = "green" }) {
-  const tones = {
-    green: {
-      background: "rgba(232,240,229,0.82)",
-      border: C.greenLight,
-    },
-    tan: {
-      background: "rgba(245,240,230,0.88)",
-      border: C.borderLight,
-    },
-  };
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        top: align === "left" ? 96 : 168,
-        [align]: -164,
-        width: 180,
-        padding: "14px 15px",
-        borderRadius: 18,
-        background: tones[tone].background,
-        border: `1px solid ${tones[tone].border}`,
-        boxShadow: "0 18px 40px rgba(61,107,78,0.12)",
-        backdropFilter: "blur(14px)",
-        zIndex: 4,
-        pointerEvents: "none",
-      }}
-    >
-      <div style={{ fontSize: 10, color: C.textSoft, textTransform: "uppercase", letterSpacing: 1.1, marginBottom: 6 }}>
-        {title}
-      </div>
-      <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
-        {text}
       </div>
     </div>
   );
@@ -379,8 +317,6 @@ export function SwipeView({
   const headlineCount = experiences.length > 0 ? Math.max(1, strongFitCount) : 0;
   const swipeTarget = collections.find((collection) => collection.id === swipeCollectionId) ?? collections[0];
   const currentWhyForYou = current ? getWhyForYou(current, prefs || {}) : [];
-  const currentWhyNow = current ? getWhyNow(current) : [];
-  const deckNarrative = getDeckNarrative(experiences, prefs || {});
   const heroDriftyPose = getDriftyPose(current, notice?.type);
   const driftyTip = current
     ? `${current.title.split(" — ")[0]} is reading like a smart ${current.time.toLowerCase()} move. ${current.conditionType === "perfect" ? "I’d jump on this one early." : "Feels like a solid card to keep in play."}`
@@ -535,7 +471,7 @@ export function SwipeView({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1.4fr 1fr",
+            gridTemplateColumns: "1fr",
             gap: 18,
             alignItems: "stretch",
           }}
@@ -551,31 +487,6 @@ export function SwipeView({
               overflow: "hidden",
             }}
           >
-            <div
-              style={{
-                position: "absolute",
-                right: 16,
-                top: 12,
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "8px 12px 8px 8px",
-                borderRadius: 999,
-                background: "rgba(255,255,255,0.66)",
-                border: `1px solid ${C.borderLight}`,
-                backdropFilter: "blur(12px)",
-              }}
-            >
-              <Drifty size={38} pose="sparkle" />
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 10, color: C.textSoft, textTransform: "uppercase", letterSpacing: 1.1 }}>
-                  Drifty Radar
-                </div>
-                <div style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>
-                  Deck is live
-                </div>
-              </div>
-            </div>
             <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1.2, color: C.textSoft, marginBottom: 8 }}>
               Today Near {locationLabel}
             </div>
@@ -587,23 +498,6 @@ export function SwipeView({
               <span style={{ fontSize: 13, color: C.textSoft }}>
                 {prefsSummary ? `Tuned for ${prefsSummary}` : "Editorially ranked for the moment"}
               </span>
-            </div>
-          </div>
-
-          <div
-            style={{
-              padding: "16px 18px",
-              borderRadius: 20,
-              background: "rgba(255,255,255,0.82)",
-              border: `1px solid ${C.borderLight}`,
-              boxShadow: "0 12px 32px rgba(61,107,78,0.06)",
-            }}
-          >
-            <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1.2, color: C.textSoft, marginBottom: 8 }}>
-              Editorial Read
-            </div>
-            <div style={{ fontSize: 14, color: C.text, lineHeight: 1.6 }}>
-              {deckNarrative}
             </div>
           </div>
         </div>
@@ -680,9 +574,6 @@ export function SwipeView({
           <DashboardCard title="This Session" accent={`linear-gradient(90deg, ${C.tan}, ${C.greenMid})`}>
             <MetricRow label="Reviewed" value={sessionStats?.reviewed ?? currentIndex} icon="⟲" />
             <MetricRow label="Left in deck" value={sessionStats?.remaining ?? Math.max(0, experiences.length - currentIndex)} icon="☰" />
-            <div style={{ fontSize: 12, color: C.textSoft, lineHeight: 1.55, paddingTop: 2 }}>
-              Calm-discovery pocket. Scenic, lower-effort ideas are still surfacing ahead of bigger hauls.
-            </div>
           </DashboardCard>
 
           <DashboardCard
@@ -691,17 +582,6 @@ export function SwipeView({
             contentStyle={{ maxHeight: 170, overflowY: "auto", paddingRight: 2 }}
           >
             <DriftyTip text={driftyTip} />
-          </DashboardCard>
-
-          <DashboardCard
-            title="Why This Card"
-            accent={`linear-gradient(90deg, ${C.green}, ${C.tan})`}
-            contentStyle={{ maxHeight: 220, overflowY: "auto", paddingRight: 2 }}
-          >
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <InsightBlock label="Why this fits" text={formatInsightLine(currentWhyForYou)} />
-              <InsightBlock label="Why now" text={formatInsightLine(currentWhyNow)} />
-            </div>
           </DashboardCard>
         </div>
 
@@ -740,18 +620,6 @@ export function SwipeView({
           />
 
           <div style={{ position: "relative", width: 520, overflow: "visible" }}>
-            <FloatingNote
-              title="Why Now"
-              text={formatInsightLine(currentWhyNow)}
-              align="left"
-              tone="green"
-            />
-            <FloatingNote
-              title="Field Notes"
-              text={`Best for ${current.categoryLabel.toLowerCase()} days, ${current.time.toLowerCase()} windows, and ${current.difficulty.toLowerCase()} effort.`}
-              align="right"
-              tone="tan"
-            />
             <StackPreviewCard
               experience={after}
               inset="20px 28px 0"
@@ -831,24 +699,6 @@ export function SwipeView({
                     background: "linear-gradient(180deg, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.14) 45%, rgba(0,0,0,0.72) 100%)",
                   }}
                 />
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 18,
-                    left: 18,
-                    padding: "8px 12px",
-                    borderRadius: 999,
-                    background: "rgba(255,255,255,0.16)",
-                    border: "1px solid rgba(255,255,255,0.18)",
-                    color: "#fff",
-                    fontSize: 11,
-                    letterSpacing: 1,
-                    textTransform: "uppercase",
-                    backdropFilter: "blur(10px)",
-                  }}
-                >
-                  Editorial pick
-                </div>
                 <div
                   style={{
                     position: "absolute",
