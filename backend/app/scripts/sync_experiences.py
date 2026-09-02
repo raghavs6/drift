@@ -16,6 +16,8 @@ async def main() -> None:
             failed=", ".join(result["failed_states"]) or "none",
         )
     )
+    for error in result["errors"]:
+        print(f"  {error}")
 
 
 if __name__ == "__main__":
