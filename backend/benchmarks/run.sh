@@ -63,6 +63,39 @@ echo "==> seeding $SEED_ROWS rows"
 echo "==> minting $TOKEN_COUNT tokens"
 "$PY" benchmarks/mint_token.py --count "$TOKEN_COUNT" --out benchmarks/tokens.json
 
+# --- provenance snapshot ---------------------------------------------------
+# Captured BEFORE uvicorn starts, not after k6 finishes. This is the last instant
+# before the app imports its config, so what is recorded is what the measured
+# process actually loaded; seeding is already done above, so the composition query
+# is real too.
+#
+# These used to be captured after k6 exited, which is only safe if nothing can
+# commit mid-run. This tree breaks that assumption, and the failure is silent: the
+# step11-async-llm run measured SQLAlchemy's default pool (5/10) but was written up
+# as "Engine configuration under test: pool_size 20" because a pool-sizing commit
+# landed while k6 was running. Read literally, that file says pool sizing changed
+# nothing — the exact opposite of what it showed.
+GIT_SHA="$(git -C "$BACKEND" rev-parse HEAD)"
+GIT_BRANCH="$(git -C "$BACKEND" rev-parse --abbrev-ref HEAD)"
+GIT_TREE="$(git -C "$BACKEND" diff --quiet && echo clean || echo dirty)"
+CATALOG_COMPOSITION="$(docker exec drift-postgres psql -U drift -d drift \
+  -c 'SELECT source, count(*) FROM experiences GROUP BY source ORDER BY 2 DESC;' 2>/dev/null \
+  || echo unavailable)"
+ENGINE_CONFIG="$("$PY" - <<'PYINNER'
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path.cwd()))
+from app.core.database import engine
+p = engine.pool
+print(f"pool class      : {type(p).__name__}")
+print(f"pool_size       : {getattr(p, 'size', lambda: 'n/a')()}")
+print(f"max_overflow    : {getattr(p, '_max_overflow', 'n/a')}")
+print(f"pool_timeout    : {getattr(p, '_timeout', 'n/a')}")
+print(f"pool_recycle    : {getattr(p, '_recycle', 'n/a')}")
+print(f"pool_pre_ping   : {getattr(p, '_pre_ping', 'n/a')}")
+PYINNER
+)"
+
 echo "==> starting mock anthropic on :$MOCK_PORT"
 "$PY" benchmarks/mock_anthropic.py --port "$MOCK_PORT" --delay "$MOCK_DELAY" \
   >"$OUT/mock.log" 2>&1 &
@@ -121,9 +154,9 @@ echo "==> writing RESULTS.md"
   echo "| Field | Value |"
   echo "|---|---|"
   echo "| Date (UTC) | $(date -u '+%Y-%m-%d %H:%M:%S') |"
-  echo "| Git SHA | $(git -C "$BACKEND" rev-parse HEAD) |"
-  echo "| Git branch | $(git -C "$BACKEND" rev-parse --abbrev-ref HEAD) |"
-  echo "| Working tree | $(git -C "$BACKEND" diff --quiet && echo clean || echo dirty) |"
+  echo "| Git SHA | $GIT_SHA |"
+  echo "| Git branch | $GIT_BRANCH |"
+  echo "| Working tree | $GIT_TREE |"
   echo "| Host | $(uname -srm) |"
   echo "| CPU | $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo unknown) |"
   echo "| Logical cores | $(sysctl -n hw.logicalcpu 2>/dev/null || nproc) |"
@@ -139,30 +172,16 @@ echo "==> writing RESULTS.md"
   echo "| Seeded rows | $SEED_ROWS |"
   echo "| k6 exit status | $K6_STATUS (99 = a threshold was crossed) |"
   echo
-  echo "### Catalog composition at run time"
+  echo "### Catalog composition at run start"
   echo
   echo '```'
-  docker exec drift-postgres psql -U drift -d drift \
-    -c 'SELECT source, count(*) FROM experiences GROUP BY source ORDER BY 2 DESC;' 2>/dev/null \
-    || echo "unavailable"
+  echo "$CATALOG_COMPOSITION"
   echo '```'
   echo
   echo "### Engine configuration under test"
   echo
   echo '```'
-  "$PY" - <<'PYINNER'
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path.cwd()))
-from app.core.database import engine
-p = engine.pool
-print(f"pool class      : {type(p).__name__}")
-print(f"pool_size       : {getattr(p, 'size', lambda: 'n/a')()}")
-print(f"max_overflow    : {getattr(p, '_max_overflow', 'n/a')}")
-print(f"pool_timeout    : {getattr(p, '_timeout', 'n/a')}")
-print(f"pool_recycle    : {getattr(p, '_recycle', 'n/a')}")
-print(f"pool_pre_ping   : {getattr(p, '_pre_ping', 'n/a')}")
-PYINNER
+  echo "$ENGINE_CONFIG"
   echo '```'
   echo
   echo "---"

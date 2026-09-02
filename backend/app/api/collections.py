@@ -2,10 +2,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlmodel import Session, delete, select
+from sqlmodel import delete, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth import get_current_user
-from app.core.database import get_session
+from app.core.database import get_async_session
 from app.models.collection import Collection, CollectionItem
 from app.models.experience import Experience
 from app.models.user import User
@@ -50,12 +51,12 @@ def _frontend_id(db_id: str) -> str:
 
 
 @router.get("")
-def get_collections(
+async def get_collections(
     user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
+    session: AsyncSession = Depends(get_async_session),
 ) -> CollectionsPayload:
-    collections = session.exec(
-        select(Collection).where(Collection.user_id == user.id)
+    collections = (
+        await session.exec(select(Collection).where(Collection.user_id == user.id))
     ).all()
 
     if not collections:
@@ -63,9 +64,11 @@ def get_collections(
             collections=[CollectionPayload(**c, itemIds=[]) for c in DEFAULT_COLLECTIONS]
         )
 
-    items = session.exec(
-        select(CollectionItem).where(
-            CollectionItem.collection_id.in_([c.id for c in collections])
+    items = (
+        await session.exec(
+            select(CollectionItem).where(
+                CollectionItem.collection_id.in_([c.id for c in collections])
+            )
         )
     ).all()
     items_by_collection: dict[str, list[str]] = {}
@@ -86,20 +89,20 @@ def get_collections(
 
 
 @router.put("")
-def put_collections(
+async def put_collections(
     payload: CollectionsPayload,
     user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
+    session: AsyncSession = Depends(get_async_session),
 ) -> PutCollectionsResult:
     """Replace all of the user's collections with the posted set."""
-    existing = session.exec(
-        select(Collection.id).where(Collection.user_id == user.id)
+    existing = (
+        await session.exec(select(Collection.id).where(Collection.user_id == user.id))
     ).all()
     if existing:
-        session.exec(
+        await session.exec(
             delete(CollectionItem).where(CollectionItem.collection_id.in_(existing))
         )
-        session.exec(delete(Collection).where(Collection.user_id == user.id))
+        await session.exec(delete(Collection).where(Collection.user_id == user.id))
 
     # CollectionItem.experience_id is a foreign key, so an id missing from the
     # catalog would abort the whole transaction with an IntegrityError (a 500).
@@ -108,7 +111,11 @@ def put_collections(
     known_ids: set[str] = set()
     if posted_ids:
         known_ids = set(
-            session.exec(select(Experience.id).where(Experience.id.in_(posted_ids))).all()
+            (
+                await session.exec(
+                    select(Experience.id).where(Experience.id.in_(posted_ids))
+                )
+            ).all()
         )
     dropped = posted_ids - known_ids
 
@@ -122,5 +129,5 @@ def put_collections(
                 CollectionItem(collection_id=db_id, experience_id=experience_id)
             )
 
-    session.commit()
+    await session.commit()
     return PutCollectionsResult(droppedIds=sorted(dropped))

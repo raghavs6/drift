@@ -5,10 +5,18 @@ from sqlalchemy.dialects import postgresql
 import app.main as main
 from app.main import app
 from app.core.config import settings
-from app.core.database import get_session
+from app.core.database import get_async_session
 from app.models.experience import Experience
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _reset_catalog_cache():
+    """Stop a cached catalog response leaking into the next test."""
+    main._catalog_cache.clear()
+    yield
+    main._catalog_cache.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -57,13 +65,13 @@ def test_list_experiences_shape():
             ]
 
     class FakeSession:
-        def exec(self, _statement):
+        async def exec(self, _statement):
             return FakeResult()
 
-    def override_get_session():
+    async def override_get_session():
         yield FakeSession()
 
-    app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_async_session] = override_get_session
     res = client.get("/api/experiences")
     app.dependency_overrides.clear()
 
@@ -84,14 +92,14 @@ def test_list_experiences_applies_filters_and_limit():
             return []
 
     class FakeSession:
-        def exec(self, statement):
+        async def exec(self, statement):
             captured["statement"] = statement
             return FakeResult()
 
-    def override_get_session():
+    async def override_get_session():
         yield FakeSession()
 
-    app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_async_session] = override_get_session
     res = client.get(
         "/api/experiences",
         params={
@@ -126,14 +134,14 @@ def test_list_experiences_uses_default_limit():
             return []
 
     class FakeSession:
-        def exec(self, statement):
+        async def exec(self, statement):
             captured["statement"] = statement
             return FakeResult()
 
-    def override_get_session():
+    async def override_get_session():
         yield FakeSession()
 
-    app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_async_session] = override_get_session
     res = client.get("/api/experiences")
     app.dependency_overrides.clear()
 
@@ -146,6 +154,66 @@ def test_list_experiences_rejects_out_of_range_limit(limit):
     res = client.get("/api/experiences", params={"limit": limit})
 
     assert res.status_code == 422
+
+
+def _catalog_probe():
+    """A fake session that records every statement the catalog route executes."""
+    calls = []
+
+    class FakeResult:
+        def all(self):
+            return []
+
+    class FakeSession:
+        async def exec(self, statement):
+            calls.append(statement)
+            return FakeResult()
+
+    async def override():
+        yield FakeSession()
+
+    return calls, override
+
+
+def test_catalog_second_identical_request_is_served_from_cache():
+    calls, override = _catalog_probe()
+    app.dependency_overrides[get_async_session] = override
+    try:
+        first = client.get("/api/experiences", params={"limit": 5})
+        second = client.get("/api/experiences", params={"limit": 5})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert first.status_code == 200 and second.status_code == 200
+    assert first.json() == second.json()
+    assert len(calls) == 1, "second identical request should not have hit the database"
+
+
+def test_catalog_cache_does_not_mix_filters():
+    """Different filters must not serve each other's rows — the whole param tuple is the key."""
+    calls, override = _catalog_probe()
+    app.dependency_overrides[get_async_session] = override
+    try:
+        client.get("/api/experiences", params={"category": "hiking"})
+        client.get("/api/experiences", params={"category": "paddling"})
+        client.get("/api/experiences", params={"category": "hiking", "state": "WI"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert len(calls) == 3
+
+
+def test_catalog_cache_expires(monkeypatch):
+    monkeypatch.setattr(main, "_CATALOG_TTL_SECONDS", 0)
+    calls, override = _catalog_probe()
+    app.dependency_overrides[get_async_session] = override
+    try:
+        client.get("/api/experiences", params={"limit": 5})
+        client.get("/api/experiences", params={"limit": 5})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert len(calls) == 2, "an expired entry should be re-queried, not served stale"
 
 
 def test_plan_trip_requires_title():
@@ -170,14 +238,20 @@ def test_plan_trip_success(monkeypatch):
         content = [FakeBlock()]
 
     class FakeMessages:
-        def create(self, **kwargs):
+        async def create(self, **kwargs):
             return FakeMessage()
 
     class FakeClient:
         def __init__(self, *args, **kwargs):
             self.messages = FakeMessages()
 
-    monkeypatch.setattr(main.anthropic, "Anthropic", FakeClient)
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(main.anthropic, "AsyncAnthropic", FakeClient)
 
     res = client.post("/api/plan-trip", json={"title": "Sunset ridge hike"})
     assert res.status_code == 200
