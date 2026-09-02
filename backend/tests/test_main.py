@@ -12,6 +12,14 @@ client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
+def _reset_catalog_cache():
+    """Stop a cached catalog response leaking into the next test."""
+    main._catalog_cache.clear()
+    yield
+    main._catalog_cache.clear()
+
+
+@pytest.fixture(autouse=True)
 def _reset_rate_limiter():
     """Clear the in-memory rate-limit log so tests don't bleed into each other."""
     main._request_log.clear()
@@ -146,6 +154,66 @@ def test_list_experiences_rejects_out_of_range_limit(limit):
     res = client.get("/api/experiences", params={"limit": limit})
 
     assert res.status_code == 422
+
+
+def _catalog_probe():
+    """A fake session that records every statement the catalog route executes."""
+    calls = []
+
+    class FakeResult:
+        def all(self):
+            return []
+
+    class FakeSession:
+        async def exec(self, statement):
+            calls.append(statement)
+            return FakeResult()
+
+    async def override():
+        yield FakeSession()
+
+    return calls, override
+
+
+def test_catalog_second_identical_request_is_served_from_cache():
+    calls, override = _catalog_probe()
+    app.dependency_overrides[get_async_session] = override
+    try:
+        first = client.get("/api/experiences", params={"limit": 5})
+        second = client.get("/api/experiences", params={"limit": 5})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert first.status_code == 200 and second.status_code == 200
+    assert first.json() == second.json()
+    assert len(calls) == 1, "second identical request should not have hit the database"
+
+
+def test_catalog_cache_does_not_mix_filters():
+    """Different filters must not serve each other's rows — the whole param tuple is the key."""
+    calls, override = _catalog_probe()
+    app.dependency_overrides[get_async_session] = override
+    try:
+        client.get("/api/experiences", params={"category": "hiking"})
+        client.get("/api/experiences", params={"category": "paddling"})
+        client.get("/api/experiences", params={"category": "hiking", "state": "WI"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert len(calls) == 3
+
+
+def test_catalog_cache_expires(monkeypatch):
+    monkeypatch.setattr(main, "_CATALOG_TTL_SECONDS", 0)
+    calls, override = _catalog_probe()
+    app.dependency_overrides[get_async_session] = override
+    try:
+        client.get("/api/experiences", params={"limit": 5})
+        client.get("/api/experiences", params={"limit": 5})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert len(calls) == 2, "an expired entry should be re-queried, not served stale"
 
 
 def test_plan_trip_requires_title():
