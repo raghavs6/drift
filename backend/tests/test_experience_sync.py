@@ -5,6 +5,7 @@ import pytest
 from app.core.config import settings
 from app.services.nps_client import fetch_parks
 from app.services.ridb_client import fetch_facilities
+from app.services import sync
 from app.services.sync import merge_prefer_nps, nps_to_experience, ridb_to_experience
 
 
@@ -147,3 +148,44 @@ def test_source_index_is_declared_on_the_model():
     assert index is not None, "index missing from the model; autogenerate would drop it"
     assert index.unique is True
     assert [c.name for c in index.columns] == ["source", "source_id"]
+
+
+def test_run_sync_raises_when_every_state_fails(monkeypatch):
+    """A run that fetched nothing must fail loudly, not return rows=0 as a success.
+
+    Both bare `except Exception` blocks used to discard the real error, so a sync with
+    bad keys "succeeded" with an empty catalog -- which would also make a fast run that
+    fetched nothing look like a throughput win.
+    """
+
+    async def unauthorized(state):
+        raise RuntimeError("401 Unauthorized")
+
+    monkeypatch.setattr(sync, "fetch_facilities", unauthorized)
+    monkeypatch.setattr(sync, "fetch_parks", unauthorized)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        asyncio.run(sync.run_sync(session=None))
+
+    message = str(excinfo.value)
+    assert "all 50 states" in message
+    assert "401 Unauthorized" in message
+
+
+def test_run_sync_reports_the_real_error_for_a_partial_failure(monkeypatch):
+    async def ridb(state):
+        if state == "WI":
+            raise RuntimeError("429 Too Many Requests")
+        return []
+
+    async def nps(state):
+        return []
+
+    monkeypatch.setattr(sync, "fetch_facilities", ridb)
+    monkeypatch.setattr(sync, "fetch_parks", nps)
+    monkeypatch.setattr(sync, "_upsert_experiences", lambda session, rows: None)
+
+    result = asyncio.run(sync.run_sync(session=None))
+
+    assert result["failed_states"] == ["WI"]
+    assert any("429 Too Many Requests" in error for error in result["errors"])

@@ -1,3 +1,4 @@
+import logging
 import re
 from typing import Any
 
@@ -67,6 +68,8 @@ DEFAULT_BRING_LIST = ["Water", "Layers", "Phone charger", "Trail snacks"]
 DEFAULT_DESCRIPTION = "A promising outdoor experience from the current feed."
 DEFAULT_DESCRIPTION2 = "Check current conditions, hours, and access details before you head out."
 UPSERT_BATCH_SIZE = 500
+
+logger = logging.getLogger(__name__)
 
 FALLBACK_PALETTES = {
     "hiking": ["#5A8F6E", "#3D6B4E", "#8BB89A"],
@@ -335,26 +338,37 @@ def _upsert_experiences(session: Session, rows: list[dict]) -> None:
         session.commit()
 
 
+async def _fetch_state(state: str) -> tuple[list[dict], list[dict], list[str]]:
+    """Fetch both sources for one state, returning the records plus one message per failure."""
+    errors: list[str] = []
+
+    try:
+        ridb_records = await fetch_facilities(state)
+    except Exception as exc:
+        ridb_records = []
+        errors.append(f"{state} ridb: {exc!r}")
+        logger.warning("RIDB fetch failed for %s: %r", state, exc)
+
+    try:
+        nps_records = await fetch_parks(state)
+    except Exception as exc:
+        nps_records = []
+        errors.append(f"{state} nps: {exc!r}")
+        logger.warning("NPS fetch failed for %s: %r", state, exc)
+
+    return ridb_records, nps_records, errors
+
+
 async def run_sync(session: Session) -> dict:
     deduped: dict[str, dict] = {}
     failed_states: list[str] = []
+    errors: list[str] = []
 
     for state in STATE_CODES:
-        state_failed = False
-        try:
-            ridb_records = await fetch_facilities(state)
-        except Exception:
-            ridb_records = []
-            state_failed = True
-
-        try:
-            nps_records = await fetch_parks(state)
-        except Exception:
-            nps_records = []
-            state_failed = True
-
-        if state_failed:
+        ridb_records, nps_records, state_errors = await _fetch_state(state)
+        if state_errors:
             failed_states.append(state)
+            errors.extend(state_errors)
 
         for raw in ridb_records:
             experience = ridb_to_experience(raw)
@@ -369,6 +383,14 @@ async def run_sync(session: Session) -> dict:
             else:
                 deduped[key] = experience
 
+    # Every state failing means the run fetched nothing at all - bad keys, no network, an
+    # upstream contract change. Returning rows=0 as a success hides that, and would let a
+    # "fast" run that fetched nothing look like a throughput win.
+    if len(failed_states) == len(STATE_CODES):
+        raise RuntimeError(
+            f"sync failed for all {len(STATE_CODES)} states; first errors: {errors[:3]}"
+        )
+
     rows = list(deduped.values())
     _upsert_experiences(session, rows)
 
@@ -376,4 +398,5 @@ async def run_sync(session: Session) -> dict:
         "rows": len(rows),
         "states": len(STATE_CODES),
         "failed_states": failed_states,
+        "errors": errors,
     }
