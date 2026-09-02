@@ -2,10 +2,10 @@ from uuid import UUID
 
 import jwt
 from fastapi import Depends, Header, HTTPException
-from sqlmodel import Session
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
-from app.core.database import get_session
+from app.core.database import get_async_session
 from app.models.user import User
 
 
@@ -25,9 +25,9 @@ def _decode_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
-def get_current_user(
+async def get_current_user(
     authorization: str | None = Header(default=None),
-    session: Session = Depends(get_session),
+    session: AsyncSession = Depends(get_async_session),
 ) -> User:
     """Resolve the signed-in Supabase user, creating the local row on first sight.
 
@@ -48,11 +48,11 @@ def get_current_user(
 
     email = claims.get("email")
 
-    user = session.get(User, user_id)
+    user = await session.get(User, user_id)
     if user is None:
         user = User(id=user_id, email=email)
         session.add(user)
-        session.commit()
-        session.refresh(user)
+        await session.commit()
+        await session.refresh(user)
 
     return user

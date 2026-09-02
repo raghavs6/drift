@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth import get_current_user
-from app.core.database import get_session
+from app.core.database import get_async_session
 from app.models.swipe import Swipe
 from app.models.user import User
 
@@ -18,10 +19,10 @@ class SwipePayload(BaseModel):
 
 
 @router.post("")
-def record_swipe(
+async def record_swipe(
     payload: SwipePayload,
     user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
+    session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, str]:
     if payload.action not in VALID_ACTIONS:
         raise HTTPException(status_code=422, detail="action must be 'save' or 'skip'")
@@ -32,18 +33,18 @@ def record_swipe(
         action=payload.action,
     )
     session.add(swipe)
-    session.commit()
+    await session.commit()
     return {"status": "ok"}
 
 
 @router.get("")
-def list_swipes(
+async def list_swipes(
     user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
+    session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, list[str]]:
     """Return the experience ids the user has skipped, for hiding them in the deck."""
     statement = select(Swipe.experience_id).where(
         Swipe.user_id == user.id, Swipe.action == "skip"
     )
-    skipped = session.exec(statement).all()
+    skipped = (await session.exec(statement)).all()
     return {"skippedIds": list(dict.fromkeys(skipped))}

@@ -5,7 +5,7 @@ from sqlalchemy.dialects import postgresql
 import app.main as main
 from app.main import app
 from app.core.config import settings
-from app.core.database import get_session
+from app.core.database import get_async_session
 from app.models.experience import Experience
 
 client = TestClient(app)
@@ -57,13 +57,13 @@ def test_list_experiences_shape():
             ]
 
     class FakeSession:
-        def exec(self, _statement):
+        async def exec(self, _statement):
             return FakeResult()
 
-    def override_get_session():
+    async def override_get_session():
         yield FakeSession()
 
-    app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_async_session] = override_get_session
     res = client.get("/api/experiences")
     app.dependency_overrides.clear()
 
@@ -84,14 +84,14 @@ def test_list_experiences_applies_filters_and_limit():
             return []
 
     class FakeSession:
-        def exec(self, statement):
+        async def exec(self, statement):
             captured["statement"] = statement
             return FakeResult()
 
-    def override_get_session():
+    async def override_get_session():
         yield FakeSession()
 
-    app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_async_session] = override_get_session
     res = client.get(
         "/api/experiences",
         params={
@@ -126,14 +126,14 @@ def test_list_experiences_uses_default_limit():
             return []
 
     class FakeSession:
-        def exec(self, statement):
+        async def exec(self, statement):
             captured["statement"] = statement
             return FakeResult()
 
-    def override_get_session():
+    async def override_get_session():
         yield FakeSession()
 
-    app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_async_session] = override_get_session
     res = client.get("/api/experiences")
     app.dependency_overrides.clear()
 
