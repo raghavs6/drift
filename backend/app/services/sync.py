@@ -84,6 +84,44 @@ FALLBACK_PALETTES = {
 }
 
 
+# RIDB returns activity names in UPPERCASE, NPS in Title Case, so match case-insensitively
+# on substrings: "ICE FISHING" and "Fishing" both have to land on fishing.
+#
+# Ordered most-distinctive-first, and that ordering is the whole point. Nearly every
+# facility offers HIKING or CAMPING, so picking the most frequent match would collapse the
+# catalog straight back into two categories - which is the bug this replaces.
+CATEGORY_ACTIVITY_KEYWORDS = [
+    ("stargazing", ("star gazing", "stargazing", "astronomy")),
+    ("foraging", ("berry picking", "mushroom", "gold panning", "hunting and gathering", "clam digging")),
+    ("climbing", ("climbing",)),
+    ("fishing", ("fishing", "fish hatchery", "fish viewing", "crabbing")),
+    ("wildlife", ("wildlife", "birding", "birdwatching", "whale watching")),
+    ("biking", ("biking", "cycling")),
+    ("water", (
+        "boating", "kayak", "canoe", "paddl", "rafting", "swimming", "water sports",
+        "water access", "water activities", "snorkeling", "diving", "sailing",
+        "beachcombing", "river trips",
+    )),
+    ("camping", ("camping", "recreational vehicles")),
+    ("hiking", ("hiking", "backpacking", "snowshoeing")),
+]
+
+# Neither API publishes a difficulty rating, so these buckets are derived from signals that
+# genuinely are published: what kind of access the place offers. Read it as "the easiest way
+# to enjoy this place", which is what a comfort preference actually filters on. Easy wins over
+# Hard deliberately - a park with both a visitor centre and a backcountry route is still
+# suitable for a casual visitor.
+EASY_ACTIVITY_KEYWORDS = (
+    "day use", "picnick", "visitor center", "playground", "front-country",
+    "self-guided tours - walking", "accessible", "interpretive", "auto touring",
+    "scenic driv", "museum", "park film", "bookstore",
+)
+HARD_ACTIVITY_KEYWORDS = (
+    "backpacking", "wilderness", "backcountry", "climbing", "sea kayaking",
+    "rafting", "winter sports", "mountain biking",
+)
+
+
 def first_defined(*values: Any) -> Any:
     return next((value for value in values if value is not None and value != ""), None)
 
@@ -97,7 +135,74 @@ def label_for_category(category: str) -> str:
     return category[:1].upper() + category[1:]
 
 
+def _activity_names(raw: dict) -> list[str]:
+    """Activity names from either source: RIDB nests them under ACTIVITY, NPS under activities."""
+    names: list[str] = []
+    for key, name_key in (("ACTIVITY", "ActivityName"), ("activities", "name")):
+        entries = raw.get(key)
+        if not isinstance(entries, list):
+            continue
+        names.extend(
+            entry[name_key]
+            for entry in entries
+            if isinstance(entry, dict) and entry.get(name_key)
+        )
+    return names
+
+
+def category_from_activities(names: list[str]) -> str | None:
+    haystack = " | ".join(names).lower()
+    for category, keywords in CATEGORY_ACTIVITY_KEYWORDS:
+        if any(keyword in haystack for keyword in keywords):
+            return category
+    return None
+
+
+def derive_difficulty(raw: dict, names: list[str]) -> str | None:
+    """None when the source says nothing at all - a null is honest, a constant is not."""
+    ada = str(raw.get("FacilityAdaAccess") or "").strip().lower()
+    accessible = ada.startswith("y")
+    if not names and not accessible:
+        return None
+
+    haystack = " | ".join(names).lower()
+    if accessible or any(keyword in haystack for keyword in EASY_ACTIVITY_KEYWORDS):
+        return "Easy"
+    if any(keyword in haystack for keyword in HARD_ACTIVITY_KEYWORDS):
+        return "Hard"
+    return "Moderate"
+
+
+def derive_cost(raw: dict) -> str | None:
+    """Real fee data where the source publishes it, None where it does not."""
+    fees = raw.get("entranceFees")
+    if isinstance(fees, list) and fees:
+        amounts = [parse_float(fee.get("cost")) for fee in fees if isinstance(fee, dict)]
+        priced = [amount for amount in amounts if amount is not None and amount > 0]
+        if priced:
+            # The cheapest entry is the per-person or per-motorcycle rate; the expensive tail
+            # is commercial and per-bus, which is not what a visitor pays.
+            return f"${min(priced):.0f}"
+        if any(amount == 0 for amount in amounts if amount is not None):
+            return "Free"
+
+    fee_text = str(raw.get("FacilityUseFeeDescription") or "")
+    if not fee_text.strip():
+        fee_text = " ".join(
+            str(entry.get("FacilityActivityFeeDescription") or "")
+            for entry in raw.get("ACTIVITY") or []
+            if isinstance(entry, dict)
+        )
+    # RIDB publishes fee prose, not an amount, and it is HTML. Saying a fee exists is all
+    # that can be claimed from it without inventing a number.
+    return "Fee required" if fee_text.strip() else None
+
+
 def infer_category(raw: dict) -> str:
+    from_activities = category_from_activities(_activity_names(raw))
+    if from_activities:
+        return from_activities
+
     source = " ".join(
         str(value)
         for value in [
@@ -238,8 +343,9 @@ def _base_experience(raw: dict, *, title: str, state: str | None, source: str, s
         "location": location,
         "state": state,
         "distance": first_defined(raw.get("distance"), raw.get("driveTime"), raw.get("DistanceLabel"), "1 hr"),
-        "difficulty": first_defined(raw.get("difficulty"), raw.get("difficultyLabel"), raw.get("Difficulty"), "Moderate"),
-        "cost": first_defined(raw.get("cost"), raw.get("priceLabel"), raw.get("FeeDescription"), "Free"),
+        "difficulty": first_defined(raw.get("difficulty"), raw.get("difficultyLabel"), raw.get("Difficulty"))
+        or derive_difficulty(raw, _activity_names(raw)),
+        "cost": first_defined(raw.get("cost"), raw.get("priceLabel")) or derive_cost(raw),
         "time": first_defined(raw.get("time"), raw.get("duration"), raw.get("DurationLabel"), "2-3 hrs"),
         "season": first_defined(raw.get("season"), raw.get("bestSeason"), raw.get("SeasonLabel"), "Year-round"),
         "category": category,

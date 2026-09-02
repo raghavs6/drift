@@ -35,7 +35,9 @@ async def fetch_facilities(state: str) -> list[dict]:
                 client,
                 "/facilities",
                 headers={"apikey": settings.ridb_api_key},
-                params={"state": state, "offset": offset, "limit": PAGE_LIMIT},
+                # full=true nests each facility's ACTIVITY list in the response. Without it
+                # the key is present but always empty, and category has nothing real to read.
+                params={"state": state, "offset": offset, "limit": PAGE_LIMIT, "full": "true"},
             )
             payload = response.json()
             page = payload.get("RECDATA") or []
