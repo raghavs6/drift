@@ -1,7 +1,9 @@
+import json
 import time
 from collections import defaultdict
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlmodel import select
@@ -39,6 +41,18 @@ RATE_LIMIT_MAX_REQUESTS = settings.rate_limit_max_requests
 RATE_LIMIT_WINDOW_SECONDS = settings.rate_limit_window_seconds
 
 _request_log: dict[str, list[float]] = defaultdict(list)
+
+# The catalog is unauthenticated and identical for every caller, changing only
+# when a sync runs, so a short TTL takes both Postgres and the JSON encoding
+# off the hot path. Encoding is the half worth caching: ?limit=500 is ~1.5 MB
+# and json encoding is GIL-bound, so caching rows would pay that cost per hit.
+_CATALOG_TTL_SECONDS = 60
+# Bounded because the key is built from query params, which the caller controls;
+# an unbounded dict keyed on user input is a memory leak. Clearing wholesale
+# rather than evicting LRU: at this size the bookkeeping costs more than the
+# occasional cold miss.
+_CATALOG_CACHE_MAX_ENTRIES = 128
+_catalog_cache: dict[tuple, tuple[float, bytes]] = {}
 
 
 def _check_rate_limit(client_ip: str) -> None:
@@ -78,7 +92,15 @@ async def list_experiences(
     kid_friendly: bool | None = None,
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_async_session),
-) -> dict[str, list]:
+) -> Response:
+    # Keyed on every filter, not just `limit`: two different filters must never
+    # serve each other's rows.
+    cache_key = (category, state, difficulty, kid_friendly, limit)
+    now = time.time()
+    cached = _catalog_cache.get(cache_key)
+    if cached is not None and now - cached[0] < _CATALOG_TTL_SECONDS:
+        return Response(content=cached[1], media_type="application/json")
+
     statement = select(Experience)
     if category is not None:
         statement = statement.where(Experience.category == category)
@@ -91,7 +113,13 @@ async def list_experiences(
 
     statement = statement.order_by(Experience.title).limit(limit)
     experiences = (await session.exec(statement)).all()
-    return {"items": [_experience_payload(experience) for experience in experiences]}
+    body = {"items": [_experience_payload(experience) for experience in experiences]}
+    encoded = json.dumps(jsonable_encoder(body)).encode()
+
+    if len(_catalog_cache) >= _CATALOG_CACHE_MAX_ENTRIES:
+        _catalog_cache.clear()
+    _catalog_cache[cache_key] = (now, encoded)
+    return Response(content=encoded, media_type="application/json")
 
 
 def _experience_payload(experience: Experience) -> dict:
