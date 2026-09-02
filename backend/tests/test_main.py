@@ -170,14 +170,20 @@ def test_plan_trip_success(monkeypatch):
         content = [FakeBlock()]
 
     class FakeMessages:
-        def create(self, **kwargs):
+        async def create(self, **kwargs):
             return FakeMessage()
 
     class FakeClient:
         def __init__(self, *args, **kwargs):
             self.messages = FakeMessages()
 
-    monkeypatch.setattr(main.anthropic, "Anthropic", FakeClient)
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(main.anthropic, "AsyncAnthropic", FakeClient)
 
     res = client.post("/api/plan-trip", json={"title": "Sunset ridge hike"})
     assert res.status_code == 200

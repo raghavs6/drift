@@ -140,12 +140,15 @@ Create a friendly, concise trip plan with:
 
 Keep the tone warm and encouraging, like a friend who knows the spot well. Be concise — no more than 250 words total."""
 
-    client = anthropic.Anthropic(api_key=api_key)
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=512,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    # Async client, awaited: the synchronous client blocked the event loop for the
+    # full API call, stalling every other request on this worker (see
+    # benchmarks/results/baseline — p99 was ~2.1s on endpoints that read one row).
+    async with anthropic.AsyncAnthropic(api_key=api_key) as client:
+        message = await client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}],
+        )
 
     plan_text = message.content[0].text
     return {"plan": plan_text}
