@@ -8,6 +8,10 @@ pydantic-settings==2.14.1
 anthropic==0.94.0
 python-dotenv==1.2.2
 sqlmodel==0.0.38
+# Required by SQLAlchemy's asyncio layer, which the async read path runs on.
+# Not a transitive install: SQLAlchemy leaves it optional, and an async engine
+# constructs fine without it — the ValueError only lands when a session runs.
+greenlet==3.5.5
 pyjwt==2.13.0
 psycopg[binary]==3.3.4
 alembic==1.18.4

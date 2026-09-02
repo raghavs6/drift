@@ -1,6 +1,8 @@
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import Session, create_engine
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
 
@@ -36,4 +38,30 @@ engine = create_engine(
 
 def get_session() -> Iterator[Session]:
     with Session(engine) as session:
+        yield session
+
+
+# The request path runs on this one. Same pool arithmetic as above, but the
+# ceiling means something different: async routes are not capped by the 40-token
+# thread pool, so concurrency is bounded by the pool alone rather than by both.
+async_engine = create_async_engine(
+    settings.database_url,
+    echo=False,
+    pool_pre_ping=True,
+    pool_size=20,
+    max_overflow=20,
+    pool_timeout=30,
+    pool_recycle=1800,
+)
+
+# expire_on_commit=False: an expired attribute reloads itself on next access,
+# which is IO. Under asyncio that raises MissingGreenlet instead of quietly
+# issuing a second query, so anything read after commit() must stay loaded.
+_async_session_factory = async_sessionmaker(
+    async_engine, class_=AsyncSession, expire_on_commit=False
+)
+
+
+async def get_async_session() -> AsyncIterator[AsyncSession]:
+    async with _async_session_factory() as session:
         yield session

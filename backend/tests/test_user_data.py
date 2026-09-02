@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from app.api.collections import _frontend_id
 from app.core import auth as auth_module
 from app.core.auth import get_current_user
-from app.core.database import get_session
+from app.core.database import get_async_session
 from app.main import app
 from app.models.user import User
 
@@ -113,7 +113,7 @@ class _FakeSession:
         self.known = list(known_experience_ids)
         self.added = []
 
-    def exec(self, statement):
+    async def exec(self, statement):
         sql = str(statement)
         if sql.lstrip().upper().startswith("DELETE"):
             return None
@@ -124,17 +124,17 @@ class _FakeSession:
     def add(self, obj):
         self.added.append(obj)
 
-    def commit(self):
+    async def commit(self):
         pass
 
 
 def _put_collections(fake_user, collections, known_experience_ids):
     session = _FakeSession(known_experience_ids)
-    app.dependency_overrides[get_session] = lambda: session
+    app.dependency_overrides[get_async_session] = lambda: session
     try:
         res = client.put("/api/collections", json={"collections": collections})
     finally:
-        app.dependency_overrides.pop(get_session, None)
+        app.dependency_overrides.pop(get_async_session, None)
     return res, session
 
 

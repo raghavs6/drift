@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlmodel import Session
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth import get_current_user
-from app.core.database import get_session
+from app.core.database import get_async_session
 from app.models.preference import UserPreference
 from app.models.user import User
 
@@ -37,23 +37,23 @@ def _to_payload(pref: UserPreference) -> PreferencesPayload:
 
 
 @router.get("")
-def get_preferences(
+async def get_preferences(
     user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
+    session: AsyncSession = Depends(get_async_session),
 ) -> PreferencesPayload:
-    pref = session.get(UserPreference, user.id)
+    pref = await session.get(UserPreference, user.id)
     if pref is None:
         return PreferencesPayload()
     return _to_payload(pref)
 
 
 @router.put("")
-def put_preferences(
+async def put_preferences(
     payload: PreferencesPayload,
     user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
+    session: AsyncSession = Depends(get_async_session),
 ) -> PreferencesPayload:
-    pref = session.get(UserPreference, user.id)
+    pref = await session.get(UserPreference, user.id)
     if pref is None:
         pref = UserPreference(user_id=user.id)
 
@@ -67,6 +67,6 @@ def put_preferences(
     pref.onboarding_complete = payload.onboardingComplete
 
     session.add(pref)
-    session.commit()
-    session.refresh(pref)
+    await session.commit()
+    await session.refresh(pref)
     return _to_payload(pref)

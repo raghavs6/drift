@@ -4,12 +4,13 @@ from collections import defaultdict
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 import anthropic
 
 from app.api import collections_router, preferences_router, swipes_router
 from app.core.config import settings
-from app.core.database import get_session
+from app.core.database import get_async_session
 from app.models.experience import Experience
 
 app = FastAPI(
@@ -70,13 +71,13 @@ def health_check() -> dict[str, str]:
 
 
 @app.get("/api/experiences")
-def list_experiences(
+async def list_experiences(
     category: str | None = None,
     state: str | None = None,
     difficulty: str | None = None,
     kid_friendly: bool | None = None,
     limit: int = Query(default=100, ge=1, le=500),
-    session: Session = Depends(get_session),
+    session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, list]:
     statement = select(Experience)
     if category is not None:
@@ -89,7 +90,7 @@ def list_experiences(
         statement = statement.where(Experience.kid_friendly == kid_friendly)
 
     statement = statement.order_by(Experience.title).limit(limit)
-    experiences = session.exec(statement).all()
+    experiences = (await session.exec(statement)).all()
     return {"items": [_experience_payload(experience) for experience in experiences]}
 
 
