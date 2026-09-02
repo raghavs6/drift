@@ -73,9 +73,16 @@ UPSERT_BATCH_SIZE = 500
 REQUEST_TIMEOUT_SECONDS = 30.0
 
 # How many states may be in flight at once. The bound is the point: an unbounded
-# asyncio.gather over all 50 states opens 50 simultaneous crawls and both APIs start
-# answering 429, so the "fast" run is spent sleeping in backoff. Tuned by measurement -
-# see benchmarks/ingestion/.
+# asyncio.gather over all 50 states opens 50 simultaneous crawls, which is how you get
+# 429'd off both APIs and spend the "fast" run asleep in backoff.
+#
+# 8 because that is where the curve flattens, not because it is a round number:
+# 8 -> 27s, 16 -> 25s, 32 -> 26s, all with zero 429s. Past 8 the constraint is no longer
+# the number of workers, it is California - 1,932 facilities over 39 pages that
+# fetch_facilities walks strictly in order, which alone accounts for the whole ~20s floor
+# (benchmarks/ingestion/per_state_timing.py). Raising the bound cannot beat one state's
+# pagination, so this takes the smallest value that reaches the plateau and leaves the
+# upstream APIs the most headroom.
 STATE_CONCURRENCY = 8
 
 logger = logging.getLogger(__name__)
