@@ -47,8 +47,6 @@ REQUIRED_FIELDS = [
     "location",
     "state",
     "distance",
-    "difficulty",
-    "cost",
     "time",
     "season",
     "category",
@@ -71,8 +69,6 @@ def assert_required_fields_populated(experience):
     for field in REQUIRED_FIELDS:
         assert experience[field] is not None, field
     assert experience["distance"] == "1 hr"
-    assert experience["difficulty"] == "Moderate"
-    assert experience["cost"] == "Free"
     assert experience["time"] == "2-3 hrs"
     assert experience["season"] == "Year-round"
     assert experience["what_to_bring"] == ["Water", "Layers", "Phone charger", "Trail snacks"]
@@ -89,6 +85,8 @@ def test_ridb_to_experience_populates_required_fields():
     assert experience["longitude"] == -89.4012
     assert experience["category"] == "water"
     assert experience["state"] == "WI"
+    assert experience["difficulty"] is None
+    assert experience["cost"] is None
 
 
 def test_nps_to_experience_populates_required_fields():
@@ -101,6 +99,9 @@ def test_nps_to_experience_populates_required_fields():
     assert experience["longitude"] == -89.4012
     assert experience["description"] == "Official NPS description wins when records overlap."
     assert experience["state"] == "WI"
+    assert experience["category"] == "hiking"
+    assert experience["difficulty"] == "Moderate"
+    assert experience["cost"] is None
 
 
 def test_merge_prefers_nps_detail_and_keeps_ridb_id():
@@ -189,3 +190,94 @@ def test_run_sync_reports_the_real_error_for_a_partial_failure(monkeypatch):
 
     assert result["failed_states"] == ["WI"]
     assert any("429 Too Many Requests" in error for error in result["errors"])
+
+
+# --- enrichment from fields the APIs actually return ------------------------
+#
+# Every synced row used to get difficulty="Moderate", cost="Free" and category="hiking"
+# for anything the keyword chain did not match, so the whole catalog looked identical.
+
+
+def _ridb(**overrides):
+    return {**RIDB_SAMPLE, **overrides}
+
+
+def test_category_reads_the_activity_list_rather_than_guessing_from_text():
+    experience = ridb_to_experience(
+        _ridb(FacilityName="Sector 9 Wall", FacilityTypeDescription="Facility",
+              ACTIVITY=[{"ActivityName": "ROCK CLIMBING"}])
+    )
+
+    assert experience["category"] == "climbing"
+
+
+def test_a_distinctive_activity_beats_the_ubiquitous_ones():
+    """Almost every facility lists HIKING and CAMPING; ranking by frequency would put the
+    whole catalog back into two buckets."""
+    experience = ridb_to_experience(
+        _ridb(ACTIVITY=[
+            {"ActivityName": "HIKING"},
+            {"ActivityName": "CAMPING"},
+            {"ActivityName": "STAR GAZING"},
+        ])
+    )
+
+    assert experience["category"] == "stargazing"
+
+
+def test_nps_title_case_activities_match_too():
+    experience = nps_to_experience({**NPS_SAMPLE, "activities": [{"name": "Birdwatching"}]})
+
+    assert experience["category"] == "wildlife"
+
+
+def test_difficulty_is_easy_when_front_country_access_exists():
+    experience = nps_to_experience({
+        **NPS_SAMPLE,
+        "activities": [{"name": "Backcountry Hiking"}, {"name": "Front-Country Hiking"}],
+    })
+
+    assert experience["difficulty"] == "Easy"
+
+
+def test_difficulty_is_hard_when_only_backcountry_access_exists():
+    experience = nps_to_experience({
+        **NPS_SAMPLE,
+        "activities": [{"name": "Backcountry Hiking"}, {"name": "Backpacking"}],
+    })
+
+    assert experience["difficulty"] == "Hard"
+
+
+def test_ada_access_of_no_is_not_read_as_accessible():
+    """FacilityAdaAccess is 'n' or 'no' on most records and only rarely 'yes'. Treating the
+    field as a boolean by checking it is non-empty would mark the whole catalog Easy."""
+    assert ridb_to_experience(_ridb(FacilityAdaAccess="N"))["difficulty"] is None
+    assert ridb_to_experience(_ridb(FacilityAdaAccess="Yes"))["difficulty"] == "Easy"
+
+
+def test_cost_uses_the_cheapest_paid_entrance_fee():
+    experience = nps_to_experience({
+        **NPS_SAMPLE,
+        "entranceFees": [
+            {"cost": "20.00", "title": "Entrance - Private Vehicle"},
+            {"cost": "15.00", "title": "Entrance - Motorcycle"},
+            {"cost": "300.00", "title": "Commercial - Bus"},
+        ],
+    })
+
+    assert experience["cost"] == "$15"
+
+
+def test_cost_is_free_only_when_the_source_says_zero():
+    experience = nps_to_experience({**NPS_SAMPLE, "entranceFees": [{"cost": "0.00"}]})
+
+    assert experience["cost"] == "Free"
+
+
+def test_ridb_fee_prose_reports_that_a_fee_exists_without_inventing_an_amount():
+    experience = ridb_to_experience(
+        _ridb(FacilityUseFeeDescription="<p>There is a $5 use fee for day use.</p>")
+    )
+
+    assert experience["cost"] == "Fee required"
