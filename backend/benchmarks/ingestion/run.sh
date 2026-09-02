@@ -82,6 +82,7 @@ echo "==> writing $OUT"
   echo "| CPU | $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo unknown) |"
   echo "| Python | $("$PY" --version 2>&1) |"
   echo "| Database | $PGDB (truncated before the run) |"
+  echo "| State concurrency | $("$PY" -c 'from app.services.sync import STATE_CONCURRENCY; print(STATE_CONCURRENCY)') |"
   echo
   echo "### Catalog composition after the run"
   echo
