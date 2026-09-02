@@ -1,5 +1,6 @@
 import asyncio
 
+import httpx
 import pytest
 
 from app.core.config import settings
@@ -116,9 +117,14 @@ def test_merge_prefers_nps_detail_and_keeps_ridb_id():
     assert merged["images"][0] == "https://example.com/nps-one.jpg"
 
 
+async def _fetch_one(fetch, state):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        return await fetch(client, state)
+
+
 @pytest.mark.skipif(not settings.ridb_api_key, reason="RIDB_API_KEY not configured")
 def test_fetch_facilities_wi_returns_raw_list():
-    facilities = asyncio.run(fetch_facilities("WI"))
+    facilities = asyncio.run(_fetch_one(fetch_facilities, "WI"))
 
     assert facilities
     assert isinstance(facilities[0], dict)
@@ -126,7 +132,7 @@ def test_fetch_facilities_wi_returns_raw_list():
 
 @pytest.mark.skipif(not settings.nps_api_key, reason="NPS_API_KEY not configured")
 def test_fetch_parks_wi_returns_raw_list():
-    parks = asyncio.run(fetch_parks("WI"))
+    parks = asyncio.run(_fetch_one(fetch_parks, "WI"))
 
     assert parks
     assert isinstance(parks[0], dict)
@@ -159,7 +165,7 @@ def test_run_sync_raises_when_every_state_fails(monkeypatch):
     fetched nothing look like a throughput win.
     """
 
-    async def unauthorized(state):
+    async def unauthorized(client, state):
         raise RuntimeError("401 Unauthorized")
 
     monkeypatch.setattr(sync, "fetch_facilities", unauthorized)
@@ -174,12 +180,12 @@ def test_run_sync_raises_when_every_state_fails(monkeypatch):
 
 
 def test_run_sync_reports_the_real_error_for_a_partial_failure(monkeypatch):
-    async def ridb(state):
+    async def ridb(client, state):
         if state == "WI":
             raise RuntimeError("429 Too Many Requests")
         return []
 
-    async def nps(state):
+    async def nps(client, state):
         return []
 
     monkeypatch.setattr(sync, "fetch_facilities", ridb)

@@ -22,30 +22,30 @@ async def _get_with_retry(client: httpx.AsyncClient, url: str, **kwargs) -> http
     return response
 
 
-async def fetch_facilities(state: str) -> list[dict]:
+async def fetch_facilities(client: httpx.AsyncClient, state: str) -> list[dict]:
+    """The caller owns the client, so one connection pool is reused across every state."""
     if not settings.ridb_api_key:
         raise RuntimeError("RIDB_API_KEY not configured")
 
     facilities: list[dict] = []
     offset = 0
 
-    async with httpx.AsyncClient(base_url=RIDB_BASE_URL, timeout=30.0) as client:
-        while True:
-            response = await _get_with_retry(
-                client,
-                "/facilities",
-                headers={"apikey": settings.ridb_api_key},
-                # full=true nests each facility's ACTIVITY list in the response. Without it
-                # the key is present but always empty, and category has nothing real to read.
-                params={"state": state, "offset": offset, "limit": PAGE_LIMIT, "full": "true"},
-            )
-            payload = response.json()
-            page = payload.get("RECDATA") or []
-            facilities.extend(page)
+    while True:
+        response = await _get_with_retry(
+            client,
+            f"{RIDB_BASE_URL}/facilities",
+            headers={"apikey": settings.ridb_api_key},
+            # full=true nests each facility's ACTIVITY list in the response. Without it
+            # the key is present but always empty, and category has nothing real to read.
+            params={"state": state, "offset": offset, "limit": PAGE_LIMIT, "full": "true"},
+        )
+        payload = response.json()
+        page = payload.get("RECDATA") or []
+        facilities.extend(page)
 
-            if len(page) < PAGE_LIMIT:
-                break
-            offset += PAGE_LIMIT
-            await asyncio.sleep(PAGE_DELAY_SECONDS)
+        if len(page) < PAGE_LIMIT:
+            break
+        offset += PAGE_LIMIT
+        await asyncio.sleep(PAGE_DELAY_SECONDS)
 
     return facilities

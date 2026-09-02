@@ -22,32 +22,32 @@ async def _get_with_retry(client: httpx.AsyncClient, url: str, **kwargs) -> http
     return response
 
 
-async def fetch_parks(state: str) -> list[dict]:
+async def fetch_parks(client: httpx.AsyncClient, state: str) -> list[dict]:
+    """The caller owns the client, so one connection pool is reused across every state."""
     if not settings.nps_api_key:
         raise RuntimeError("NPS_API_KEY not configured")
 
     parks: list[dict] = []
     start = 0
 
-    async with httpx.AsyncClient(base_url=NPS_BASE_URL, timeout=30.0) as client:
-        while True:
-            response = await _get_with_retry(
-                client,
-                "/parks",
-                params={
-                    "stateCode": state,
-                    "api_key": settings.nps_api_key,
-                    "start": start,
-                    "limit": PAGE_LIMIT,
-                },
-            )
-            payload = response.json()
-            page = payload.get("data") or []
-            parks.extend(page)
+    while True:
+        response = await _get_with_retry(
+            client,
+            f"{NPS_BASE_URL}/parks",
+            params={
+                "stateCode": state,
+                "api_key": settings.nps_api_key,
+                "start": start,
+                "limit": PAGE_LIMIT,
+            },
+        )
+        payload = response.json()
+        page = payload.get("data") or []
+        parks.extend(page)
 
-            if len(page) < PAGE_LIMIT:
-                break
-            start += PAGE_LIMIT
-            await asyncio.sleep(PAGE_DELAY_SECONDS)
+        if len(page) < PAGE_LIMIT:
+            break
+        start += PAGE_LIMIT
+        await asyncio.sleep(PAGE_DELAY_SECONDS)
 
     return parks

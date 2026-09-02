@@ -2,6 +2,7 @@ import logging
 import re
 from typing import Any
 
+import httpx
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import Session
@@ -68,6 +69,7 @@ DEFAULT_BRING_LIST = ["Water", "Layers", "Phone charger", "Trail snacks"]
 DEFAULT_DESCRIPTION = "A promising outdoor experience from the current feed."
 DEFAULT_DESCRIPTION2 = "Check current conditions, hours, and access details before you head out."
 UPSERT_BATCH_SIZE = 500
+REQUEST_TIMEOUT_SECONDS = 30.0
 
 logger = logging.getLogger(__name__)
 
@@ -444,19 +446,21 @@ def _upsert_experiences(session: Session, rows: list[dict]) -> None:
         session.commit()
 
 
-async def _fetch_state(state: str) -> tuple[list[dict], list[dict], list[str]]:
+async def _fetch_state(
+    client: httpx.AsyncClient, state: str
+) -> tuple[list[dict], list[dict], list[str]]:
     """Fetch both sources for one state, returning the records plus one message per failure."""
     errors: list[str] = []
 
     try:
-        ridb_records = await fetch_facilities(state)
+        ridb_records = await fetch_facilities(client, state)
     except Exception as exc:
         ridb_records = []
         errors.append(f"{state} ridb: {exc!r}")
         logger.warning("RIDB fetch failed for %s: %r", state, exc)
 
     try:
-        nps_records = await fetch_parks(state)
+        nps_records = await fetch_parks(client, state)
     except Exception as exc:
         nps_records = []
         errors.append(f"{state} nps: {exc!r}")
@@ -465,29 +469,36 @@ async def _fetch_state(state: str) -> tuple[list[dict], list[dict], list[str]]:
     return ridb_records, nps_records, errors
 
 
+def _collect(deduped: dict[str, dict], ridb_records: list[dict], nps_records: list[dict]) -> None:
+    """Fold one state's records into the run-wide dedupe map, NPS detail winning on overlap."""
+    for raw in ridb_records:
+        experience = ridb_to_experience(raw)
+        deduped[dedupe_key(experience)] = experience
+
+    for raw in nps_records:
+        experience = nps_to_experience(raw)
+        key = dedupe_key(experience)
+        if key in deduped:
+            deduped[key] = merge_prefer_nps(deduped[key], experience)
+        else:
+            deduped[key] = experience
+
+
 async def run_sync(session: Session) -> dict:
     deduped: dict[str, dict] = {}
     failed_states: list[str] = []
     errors: list[str] = []
 
-    for state in STATE_CODES:
-        ridb_records, nps_records, state_errors = await _fetch_state(state)
-        if state_errors:
-            failed_states.append(state)
-            errors.extend(state_errors)
+    # One client for the whole run. Each fetch function used to open its own inside the
+    # call, so all 100 crawls paid a fresh TCP + TLS handshake and nothing was reused.
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
+        for state in STATE_CODES:
+            ridb_records, nps_records, state_errors = await _fetch_state(client, state)
+            if state_errors:
+                failed_states.append(state)
+                errors.extend(state_errors)
 
-        for raw in ridb_records:
-            experience = ridb_to_experience(raw)
-            key = dedupe_key(experience)
-            deduped[key] = experience
-
-        for raw in nps_records:
-            experience = nps_to_experience(raw)
-            key = dedupe_key(experience)
-            if key in deduped:
-                deduped[key] = merge_prefer_nps(deduped[key], experience)
-            else:
-                deduped[key] = experience
+            _collect(deduped, ridb_records, nps_records)
 
     # Every state failing means the run fetched nothing at all - bad keys, no network, an
     # upstream contract change. Returning rows=0 as a success hides that, and would let a
