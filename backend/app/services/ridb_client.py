@@ -3,23 +3,12 @@ import asyncio
 import httpx
 
 from app.core.config import settings
+from app.services.http_retry import get_with_retry
 
 
 RIDB_BASE_URL = "https://ridb.recreation.gov/api/v1"
 PAGE_LIMIT = 50
 PAGE_DELAY_SECONDS = 0.15
-MAX_RETRIES = 3
-
-
-async def _get_with_retry(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response:
-    for attempt in range(MAX_RETRIES):
-        response = await client.get(url, **kwargs)
-        if response.status_code != 429:
-            response.raise_for_status()
-            return response
-        await asyncio.sleep(0.5 * (attempt + 1))
-    response.raise_for_status()
-    return response
 
 
 async def fetch_facilities(client: httpx.AsyncClient, state: str) -> list[dict]:
@@ -31,7 +20,7 @@ async def fetch_facilities(client: httpx.AsyncClient, state: str) -> list[dict]:
     offset = 0
 
     while True:
-        response = await _get_with_retry(
+        response = await get_with_retry(
             client,
             f"{RIDB_BASE_URL}/facilities",
             headers={"apikey": settings.ridb_api_key},
