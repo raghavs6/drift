@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 from typing import Any
@@ -70,6 +71,12 @@ DEFAULT_DESCRIPTION = "A promising outdoor experience from the current feed."
 DEFAULT_DESCRIPTION2 = "Check current conditions, hours, and access details before you head out."
 UPSERT_BATCH_SIZE = 500
 REQUEST_TIMEOUT_SECONDS = 30.0
+
+# How many states may be in flight at once. The bound is the point: an unbounded
+# asyncio.gather over all 50 states opens 50 simultaneous crawls and both APIs start
+# answering 429, so the "fast" run is spent sleeping in backoff. Tuned by measurement -
+# see benchmarks/ingestion/.
+STATE_CONCURRENCY = 8
 
 logger = logging.getLogger(__name__)
 
@@ -489,16 +496,36 @@ async def run_sync(session: Session) -> dict:
     failed_states: list[str] = []
     errors: list[str] = []
 
+    semaphore = asyncio.Semaphore(STATE_CONCURRENCY)
+
+    async def fetch_bounded(client: httpx.AsyncClient, state: str):
+        async with semaphore:
+            return await _fetch_state(client, state)
+
     # One client for the whole run. Each fetch function used to open its own inside the
     # call, so all 100 crawls paid a fresh TCP + TLS handshake and nothing was reused.
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
-        for state in STATE_CODES:
-            ridb_records, nps_records, state_errors = await _fetch_state(client, state)
-            if state_errors:
-                failed_states.append(state)
-                errors.extend(state_errors)
+    # The pool is sized to the bound: at most STATE_CONCURRENCY requests are in flight,
+    # spread over two hosts, and keepalive has to cover both or connections get dropped
+    # and re-established under load - which is the waste this just removed.
+    limits = httpx.Limits(
+        max_connections=STATE_CONCURRENCY * 2,
+        max_keepalive_connections=STATE_CONCURRENCY * 2,
+    )
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS, limits=limits) as client:
+        results = await asyncio.gather(
+            *(fetch_bounded(client, state) for state in STATE_CODES)
+        )
 
-            _collect(deduped, ridb_records, nps_records)
+    # gather returns results in the order its awaitables were passed, so the fold below runs
+    # in STATE_CODES order exactly as the sequential version did. That matters: dedupe_key
+    # collisions are resolved last-writer-wins, so a different fold order would silently
+    # produce a different catalog and the before/after row counts would stop being comparable.
+    for state, (ridb_records, nps_records, state_errors) in zip(STATE_CODES, results):
+        if state_errors:
+            failed_states.append(state)
+            errors.extend(state_errors)
+
+        _collect(deduped, ridb_records, nps_records)
 
     # Every state failing means the run fetched nothing at all - bad keys, no network, an
     # upstream contract change. Returning rows=0 as a success hides that, and would let a

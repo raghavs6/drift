@@ -198,6 +198,51 @@ def test_run_sync_reports_the_real_error_for_a_partial_failure(monkeypatch):
     assert any("429 Too Many Requests" in error for error in result["errors"])
 
 
+def test_state_crawls_run_concurrently_but_never_exceed_the_bound(monkeypatch):
+    """The bound is the whole point. Unbounded, 50 simultaneous crawls get 429'd off both
+    APIs and the run is spent sleeping in backoff."""
+    in_flight = 0
+    peak = 0
+
+    async def fake_fetch_state(client, state):
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        await asyncio.sleep(0.01)
+        in_flight -= 1
+        return [], [], []
+
+    monkeypatch.setattr(sync, "_fetch_state", fake_fetch_state)
+    monkeypatch.setattr(sync, "_upsert_experiences", lambda session, rows: None)
+
+    asyncio.run(sync.run_sync(session=None))
+
+    assert peak <= sync.STATE_CONCURRENCY
+    assert peak > 1, "ran serially - the gather is not actually concurrent"
+
+
+def test_results_are_folded_in_state_order_not_completion_order(monkeypatch):
+    """dedupe_key collisions resolve last-writer-wins, so folding in completion order would
+    silently produce a different catalog every run and the before/after counts would stop
+    being comparable."""
+
+    async def fake_fetch_state(client, state):
+        # The first state finishes last. Folding by completion would let it win.
+        await asyncio.sleep(0.05 if state == sync.STATE_CODES[0] else 0)
+        return [{"FacilityName": "Same Place", "FacilityID": state}], [], []
+
+    captured = {}
+    monkeypatch.setattr(sync, "_fetch_state", fake_fetch_state)
+    monkeypatch.setattr(
+        sync, "_upsert_experiences", lambda session, rows: captured.update(rows=rows)
+    )
+
+    result = asyncio.run(sync.run_sync(session=None))
+
+    assert result["rows"] == 1
+    assert captured["rows"][0]["source_id"] == sync.STATE_CODES[-1]
+
+
 # --- enrichment from fields the APIs actually return ------------------------
 #
 # Every synced row used to get difficulty="Moderate", cost="Free" and category="hiking"
