@@ -1,10 +1,12 @@
 import asyncio
 
+import httpx
 import pytest
 
 from app.core.config import settings
 from app.services.nps_client import fetch_parks
 from app.services.ridb_client import fetch_facilities
+from app.services import sync
 from app.services.sync import merge_prefer_nps, nps_to_experience, ridb_to_experience
 
 
@@ -46,8 +48,6 @@ REQUIRED_FIELDS = [
     "location",
     "state",
     "distance",
-    "difficulty",
-    "cost",
     "time",
     "season",
     "category",
@@ -70,8 +70,6 @@ def assert_required_fields_populated(experience):
     for field in REQUIRED_FIELDS:
         assert experience[field] is not None, field
     assert experience["distance"] == "1 hr"
-    assert experience["difficulty"] == "Moderate"
-    assert experience["cost"] == "Free"
     assert experience["time"] == "2-3 hrs"
     assert experience["season"] == "Year-round"
     assert experience["what_to_bring"] == ["Water", "Layers", "Phone charger", "Trail snacks"]
@@ -88,6 +86,8 @@ def test_ridb_to_experience_populates_required_fields():
     assert experience["longitude"] == -89.4012
     assert experience["category"] == "water"
     assert experience["state"] == "WI"
+    assert experience["difficulty"] is None
+    assert experience["cost"] is None
 
 
 def test_nps_to_experience_populates_required_fields():
@@ -100,6 +100,9 @@ def test_nps_to_experience_populates_required_fields():
     assert experience["longitude"] == -89.4012
     assert experience["description"] == "Official NPS description wins when records overlap."
     assert experience["state"] == "WI"
+    assert experience["category"] == "hiking"
+    assert experience["difficulty"] == "Moderate"
+    assert experience["cost"] is None
 
 
 def test_merge_prefers_nps_detail_and_keeps_ridb_id():
@@ -114,9 +117,14 @@ def test_merge_prefers_nps_detail_and_keeps_ridb_id():
     assert merged["images"][0] == "https://example.com/nps-one.jpg"
 
 
+async def _fetch_one(fetch, state):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        return await fetch(client, state)
+
+
 @pytest.mark.skipif(not settings.ridb_api_key, reason="RIDB_API_KEY not configured")
 def test_fetch_facilities_wi_returns_raw_list():
-    facilities = asyncio.run(fetch_facilities("WI"))
+    facilities = asyncio.run(_fetch_one(fetch_facilities, "WI"))
 
     assert facilities
     assert isinstance(facilities[0], dict)
@@ -124,7 +132,7 @@ def test_fetch_facilities_wi_returns_raw_list():
 
 @pytest.mark.skipif(not settings.nps_api_key, reason="NPS_API_KEY not configured")
 def test_fetch_parks_wi_returns_raw_list():
-    parks = asyncio.run(fetch_parks("WI"))
+    parks = asyncio.run(_fetch_one(fetch_parks, "WI"))
 
     assert parks
     assert isinstance(parks[0], dict)
@@ -147,3 +155,180 @@ def test_source_index_is_declared_on_the_model():
     assert index is not None, "index missing from the model; autogenerate would drop it"
     assert index.unique is True
     assert [c.name for c in index.columns] == ["source", "source_id"]
+
+
+def test_run_sync_raises_when_every_state_fails(monkeypatch):
+    """A run that fetched nothing must fail loudly, not return rows=0 as a success.
+
+    Both bare `except Exception` blocks used to discard the real error, so a sync with
+    bad keys "succeeded" with an empty catalog -- which would also make a fast run that
+    fetched nothing look like a throughput win.
+    """
+
+    async def unauthorized(client, state):
+        raise RuntimeError("401 Unauthorized")
+
+    monkeypatch.setattr(sync, "fetch_facilities", unauthorized)
+    monkeypatch.setattr(sync, "fetch_parks", unauthorized)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        asyncio.run(sync.run_sync(session=None))
+
+    message = str(excinfo.value)
+    assert "all 50 states" in message
+    assert "401 Unauthorized" in message
+
+
+def test_run_sync_reports_the_real_error_for_a_partial_failure(monkeypatch):
+    async def ridb(client, state):
+        if state == "WI":
+            raise RuntimeError("429 Too Many Requests")
+        return []
+
+    async def nps(client, state):
+        return []
+
+    monkeypatch.setattr(sync, "fetch_facilities", ridb)
+    monkeypatch.setattr(sync, "fetch_parks", nps)
+    monkeypatch.setattr(sync, "_upsert_experiences", lambda session, rows: None)
+
+    result = asyncio.run(sync.run_sync(session=None))
+
+    assert result["failed_states"] == ["WI"]
+    assert any("429 Too Many Requests" in error for error in result["errors"])
+
+
+def test_state_crawls_run_concurrently_but_never_exceed_the_bound(monkeypatch):
+    """The bound is the whole point. Unbounded, 50 simultaneous crawls get 429'd off both
+    APIs and the run is spent sleeping in backoff."""
+    in_flight = 0
+    peak = 0
+
+    async def fake_fetch_state(client, state):
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        await asyncio.sleep(0.01)
+        in_flight -= 1
+        return [], [], []
+
+    monkeypatch.setattr(sync, "_fetch_state", fake_fetch_state)
+    monkeypatch.setattr(sync, "_upsert_experiences", lambda session, rows: None)
+
+    asyncio.run(sync.run_sync(session=None))
+
+    assert peak <= sync.STATE_CONCURRENCY
+    assert peak > 1, "ran serially - the gather is not actually concurrent"
+
+
+def test_results_are_folded_in_state_order_not_completion_order(monkeypatch):
+    """dedupe_key collisions resolve last-writer-wins, so folding in completion order would
+    silently produce a different catalog every run and the before/after counts would stop
+    being comparable."""
+
+    async def fake_fetch_state(client, state):
+        # The first state finishes last. Folding by completion would let it win.
+        await asyncio.sleep(0.05 if state == sync.STATE_CODES[0] else 0)
+        return [{"FacilityName": "Same Place", "FacilityID": state}], [], []
+
+    captured = {}
+    monkeypatch.setattr(sync, "_fetch_state", fake_fetch_state)
+    monkeypatch.setattr(
+        sync, "_upsert_experiences", lambda session, rows: captured.update(rows=rows)
+    )
+
+    result = asyncio.run(sync.run_sync(session=None))
+
+    assert result["rows"] == 1
+    assert captured["rows"][0]["source_id"] == sync.STATE_CODES[-1]
+
+
+# --- enrichment from fields the APIs actually return ------------------------
+#
+# Every synced row used to get difficulty="Moderate", cost="Free" and category="hiking"
+# for anything the keyword chain did not match, so the whole catalog looked identical.
+
+
+def _ridb(**overrides):
+    return {**RIDB_SAMPLE, **overrides}
+
+
+def test_category_reads_the_activity_list_rather_than_guessing_from_text():
+    experience = ridb_to_experience(
+        _ridb(FacilityName="Sector 9 Wall", FacilityTypeDescription="Facility",
+              ACTIVITY=[{"ActivityName": "ROCK CLIMBING"}])
+    )
+
+    assert experience["category"] == "climbing"
+
+
+def test_a_distinctive_activity_beats_the_ubiquitous_ones():
+    """Almost every facility lists HIKING and CAMPING; ranking by frequency would put the
+    whole catalog back into two buckets."""
+    experience = ridb_to_experience(
+        _ridb(ACTIVITY=[
+            {"ActivityName": "HIKING"},
+            {"ActivityName": "CAMPING"},
+            {"ActivityName": "STAR GAZING"},
+        ])
+    )
+
+    assert experience["category"] == "stargazing"
+
+
+def test_nps_title_case_activities_match_too():
+    experience = nps_to_experience({**NPS_SAMPLE, "activities": [{"name": "Birdwatching"}]})
+
+    assert experience["category"] == "wildlife"
+
+
+def test_difficulty_is_easy_when_front_country_access_exists():
+    experience = nps_to_experience({
+        **NPS_SAMPLE,
+        "activities": [{"name": "Backcountry Hiking"}, {"name": "Front-Country Hiking"}],
+    })
+
+    assert experience["difficulty"] == "Easy"
+
+
+def test_difficulty_is_hard_when_only_backcountry_access_exists():
+    experience = nps_to_experience({
+        **NPS_SAMPLE,
+        "activities": [{"name": "Backcountry Hiking"}, {"name": "Backpacking"}],
+    })
+
+    assert experience["difficulty"] == "Hard"
+
+
+def test_ada_access_of_no_is_not_read_as_accessible():
+    """FacilityAdaAccess is 'n' or 'no' on most records and only rarely 'yes'. Treating the
+    field as a boolean by checking it is non-empty would mark the whole catalog Easy."""
+    assert ridb_to_experience(_ridb(FacilityAdaAccess="N"))["difficulty"] is None
+    assert ridb_to_experience(_ridb(FacilityAdaAccess="Yes"))["difficulty"] == "Easy"
+
+
+def test_cost_uses_the_cheapest_paid_entrance_fee():
+    experience = nps_to_experience({
+        **NPS_SAMPLE,
+        "entranceFees": [
+            {"cost": "20.00", "title": "Entrance - Private Vehicle"},
+            {"cost": "15.00", "title": "Entrance - Motorcycle"},
+            {"cost": "300.00", "title": "Commercial - Bus"},
+        ],
+    })
+
+    assert experience["cost"] == "$15"
+
+
+def test_cost_is_free_only_when_the_source_says_zero():
+    experience = nps_to_experience({**NPS_SAMPLE, "entranceFees": [{"cost": "0.00"}]})
+
+    assert experience["cost"] == "Free"
+
+
+def test_ridb_fee_prose_reports_that_a_fee_exists_without_inventing_an_amount():
+    experience = ridb_to_experience(
+        _ridb(FacilityUseFeeDescription="<p>There is a $5 use fee for day use.</p>")
+    )
+
+    assert experience["cost"] == "Fee required"

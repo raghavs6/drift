@@ -1,6 +1,9 @@
+import asyncio
+import logging
 import re
 from typing import Any
 
+import httpx
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import Session
@@ -67,6 +70,22 @@ DEFAULT_BRING_LIST = ["Water", "Layers", "Phone charger", "Trail snacks"]
 DEFAULT_DESCRIPTION = "A promising outdoor experience from the current feed."
 DEFAULT_DESCRIPTION2 = "Check current conditions, hours, and access details before you head out."
 UPSERT_BATCH_SIZE = 500
+REQUEST_TIMEOUT_SECONDS = 30.0
+
+# How many states may be in flight at once. The bound is the point: an unbounded
+# asyncio.gather over all 50 states opens 50 simultaneous crawls, which is how you get
+# 429'd off both APIs and spend the "fast" run asleep in backoff.
+#
+# 8 because that is where the curve flattens, not because it is a round number:
+# 8 -> 27s, 16 -> 25s, 32 -> 26s, all with zero 429s. Past 8 the constraint is no longer
+# the number of workers, it is California - 1,932 facilities over 39 pages that
+# fetch_facilities walks strictly in order, which alone accounts for the whole ~20s floor
+# (benchmarks/ingestion/per_state_timing.py). Raising the bound cannot beat one state's
+# pagination, so this takes the smallest value that reaches the plateau and leaves the
+# upstream APIs the most headroom.
+STATE_CONCURRENCY = 8
+
+logger = logging.getLogger(__name__)
 
 FALLBACK_PALETTES = {
     "hiking": ["#5A8F6E", "#3D6B4E", "#8BB89A"],
@@ -79,6 +98,44 @@ FALLBACK_PALETTES = {
     "wildlife": ["#6B8F5E", "#4A6B3E", "#8BB87A"],
     "foraging": ["#6B5A3E", "#4F432D", "#8C7A57"],
 }
+
+
+# RIDB returns activity names in UPPERCASE, NPS in Title Case, so match case-insensitively
+# on substrings: "ICE FISHING" and "Fishing" both have to land on fishing.
+#
+# Ordered most-distinctive-first, and that ordering is the whole point. Nearly every
+# facility offers HIKING or CAMPING, so picking the most frequent match would collapse the
+# catalog straight back into two categories - which is the bug this replaces.
+CATEGORY_ACTIVITY_KEYWORDS = [
+    ("stargazing", ("star gazing", "stargazing", "astronomy")),
+    ("foraging", ("berry picking", "mushroom", "gold panning", "hunting and gathering", "clam digging")),
+    ("climbing", ("climbing",)),
+    ("fishing", ("fishing", "fish hatchery", "fish viewing", "crabbing")),
+    ("wildlife", ("wildlife", "birding", "birdwatching", "whale watching")),
+    ("biking", ("biking", "cycling")),
+    ("water", (
+        "boating", "kayak", "canoe", "paddl", "rafting", "swimming", "water sports",
+        "water access", "water activities", "snorkeling", "diving", "sailing",
+        "beachcombing", "river trips",
+    )),
+    ("camping", ("camping", "recreational vehicles")),
+    ("hiking", ("hiking", "backpacking", "snowshoeing")),
+]
+
+# Neither API publishes a difficulty rating, so these buckets are derived from signals that
+# genuinely are published: what kind of access the place offers. Read it as "the easiest way
+# to enjoy this place", which is what a comfort preference actually filters on. Easy wins over
+# Hard deliberately - a park with both a visitor centre and a backcountry route is still
+# suitable for a casual visitor.
+EASY_ACTIVITY_KEYWORDS = (
+    "day use", "picnick", "visitor center", "playground", "front-country",
+    "self-guided tours - walking", "accessible", "interpretive", "auto touring",
+    "scenic driv", "museum", "park film", "bookstore",
+)
+HARD_ACTIVITY_KEYWORDS = (
+    "backpacking", "wilderness", "backcountry", "climbing", "sea kayaking",
+    "rafting", "winter sports", "mountain biking",
+)
 
 
 def first_defined(*values: Any) -> Any:
@@ -94,7 +151,74 @@ def label_for_category(category: str) -> str:
     return category[:1].upper() + category[1:]
 
 
+def _activity_names(raw: dict) -> list[str]:
+    """Activity names from either source: RIDB nests them under ACTIVITY, NPS under activities."""
+    names: list[str] = []
+    for key, name_key in (("ACTIVITY", "ActivityName"), ("activities", "name")):
+        entries = raw.get(key)
+        if not isinstance(entries, list):
+            continue
+        names.extend(
+            entry[name_key]
+            for entry in entries
+            if isinstance(entry, dict) and entry.get(name_key)
+        )
+    return names
+
+
+def category_from_activities(names: list[str]) -> str | None:
+    haystack = " | ".join(names).lower()
+    for category, keywords in CATEGORY_ACTIVITY_KEYWORDS:
+        if any(keyword in haystack for keyword in keywords):
+            return category
+    return None
+
+
+def derive_difficulty(raw: dict, names: list[str]) -> str | None:
+    """None when the source says nothing at all - a null is honest, a constant is not."""
+    ada = str(raw.get("FacilityAdaAccess") or "").strip().lower()
+    accessible = ada.startswith("y")
+    if not names and not accessible:
+        return None
+
+    haystack = " | ".join(names).lower()
+    if accessible or any(keyword in haystack for keyword in EASY_ACTIVITY_KEYWORDS):
+        return "Easy"
+    if any(keyword in haystack for keyword in HARD_ACTIVITY_KEYWORDS):
+        return "Hard"
+    return "Moderate"
+
+
+def derive_cost(raw: dict) -> str | None:
+    """Real fee data where the source publishes it, None where it does not."""
+    fees = raw.get("entranceFees")
+    if isinstance(fees, list) and fees:
+        amounts = [parse_float(fee.get("cost")) for fee in fees if isinstance(fee, dict)]
+        priced = [amount for amount in amounts if amount is not None and amount > 0]
+        if priced:
+            # The cheapest entry is the per-person or per-motorcycle rate; the expensive tail
+            # is commercial and per-bus, which is not what a visitor pays.
+            return f"${min(priced):.0f}"
+        if any(amount == 0 for amount in amounts if amount is not None):
+            return "Free"
+
+    fee_text = str(raw.get("FacilityUseFeeDescription") or "")
+    if not fee_text.strip():
+        fee_text = " ".join(
+            str(entry.get("FacilityActivityFeeDescription") or "")
+            for entry in raw.get("ACTIVITY") or []
+            if isinstance(entry, dict)
+        )
+    # RIDB publishes fee prose, not an amount, and it is HTML. Saying a fee exists is all
+    # that can be claimed from it without inventing a number.
+    return "Fee required" if fee_text.strip() else None
+
+
 def infer_category(raw: dict) -> str:
+    from_activities = category_from_activities(_activity_names(raw))
+    if from_activities:
+        return from_activities
+
     source = " ".join(
         str(value)
         for value in [
@@ -235,8 +359,9 @@ def _base_experience(raw: dict, *, title: str, state: str | None, source: str, s
         "location": location,
         "state": state,
         "distance": first_defined(raw.get("distance"), raw.get("driveTime"), raw.get("DistanceLabel"), "1 hr"),
-        "difficulty": first_defined(raw.get("difficulty"), raw.get("difficultyLabel"), raw.get("Difficulty"), "Moderate"),
-        "cost": first_defined(raw.get("cost"), raw.get("priceLabel"), raw.get("FeeDescription"), "Free"),
+        "difficulty": first_defined(raw.get("difficulty"), raw.get("difficultyLabel"), raw.get("Difficulty"))
+        or derive_difficulty(raw, _activity_names(raw)),
+        "cost": first_defined(raw.get("cost"), raw.get("priceLabel")) or derive_cost(raw),
         "time": first_defined(raw.get("time"), raw.get("duration"), raw.get("DurationLabel"), "2-3 hrs"),
         "season": first_defined(raw.get("season"), raw.get("bestSeason"), raw.get("SeasonLabel"), "Year-round"),
         "category": category,
@@ -335,39 +460,87 @@ def _upsert_experiences(session: Session, rows: list[dict]) -> None:
         session.commit()
 
 
+async def _fetch_state(
+    client: httpx.AsyncClient, state: str
+) -> tuple[list[dict], list[dict], list[str]]:
+    """Fetch both sources for one state, returning the records plus one message per failure."""
+    errors: list[str] = []
+
+    try:
+        ridb_records = await fetch_facilities(client, state)
+    except Exception as exc:
+        ridb_records = []
+        errors.append(f"{state} ridb: {exc!r}")
+        logger.warning("RIDB fetch failed for %s: %r", state, exc)
+
+    try:
+        nps_records = await fetch_parks(client, state)
+    except Exception as exc:
+        nps_records = []
+        errors.append(f"{state} nps: {exc!r}")
+        logger.warning("NPS fetch failed for %s: %r", state, exc)
+
+    return ridb_records, nps_records, errors
+
+
+def _collect(deduped: dict[str, dict], ridb_records: list[dict], nps_records: list[dict]) -> None:
+    """Fold one state's records into the run-wide dedupe map, NPS detail winning on overlap."""
+    for raw in ridb_records:
+        experience = ridb_to_experience(raw)
+        deduped[dedupe_key(experience)] = experience
+
+    for raw in nps_records:
+        experience = nps_to_experience(raw)
+        key = dedupe_key(experience)
+        if key in deduped:
+            deduped[key] = merge_prefer_nps(deduped[key], experience)
+        else:
+            deduped[key] = experience
+
+
 async def run_sync(session: Session) -> dict:
     deduped: dict[str, dict] = {}
     failed_states: list[str] = []
+    errors: list[str] = []
 
-    for state in STATE_CODES:
-        state_failed = False
-        try:
-            ridb_records = await fetch_facilities(state)
-        except Exception:
-            ridb_records = []
-            state_failed = True
+    semaphore = asyncio.Semaphore(STATE_CONCURRENCY)
 
-        try:
-            nps_records = await fetch_parks(state)
-        except Exception:
-            nps_records = []
-            state_failed = True
+    async def fetch_bounded(client: httpx.AsyncClient, state: str):
+        async with semaphore:
+            return await _fetch_state(client, state)
 
-        if state_failed:
+    # One client for the whole run. Each fetch function used to open its own inside the
+    # call, so all 100 crawls paid a fresh TCP + TLS handshake and nothing was reused.
+    # The pool is sized to the bound: at most STATE_CONCURRENCY requests are in flight,
+    # spread over two hosts, and keepalive has to cover both or connections get dropped
+    # and re-established under load - which is the waste this just removed.
+    limits = httpx.Limits(
+        max_connections=STATE_CONCURRENCY * 2,
+        max_keepalive_connections=STATE_CONCURRENCY * 2,
+    )
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS, limits=limits) as client:
+        results = await asyncio.gather(
+            *(fetch_bounded(client, state) for state in STATE_CODES)
+        )
+
+    # gather returns results in the order its awaitables were passed, so the fold below runs
+    # in STATE_CODES order exactly as the sequential version did. That matters: dedupe_key
+    # collisions are resolved last-writer-wins, so a different fold order would silently
+    # produce a different catalog and the before/after row counts would stop being comparable.
+    for state, (ridb_records, nps_records, state_errors) in zip(STATE_CODES, results):
+        if state_errors:
             failed_states.append(state)
+            errors.extend(state_errors)
 
-        for raw in ridb_records:
-            experience = ridb_to_experience(raw)
-            key = dedupe_key(experience)
-            deduped[key] = experience
+        _collect(deduped, ridb_records, nps_records)
 
-        for raw in nps_records:
-            experience = nps_to_experience(raw)
-            key = dedupe_key(experience)
-            if key in deduped:
-                deduped[key] = merge_prefer_nps(deduped[key], experience)
-            else:
-                deduped[key] = experience
+    # Every state failing means the run fetched nothing at all - bad keys, no network, an
+    # upstream contract change. Returning rows=0 as a success hides that, and would let a
+    # "fast" run that fetched nothing look like a throughput win.
+    if len(failed_states) == len(STATE_CODES):
+        raise RuntimeError(
+            f"sync failed for all {len(STATE_CODES)} states; first errors: {errors[:3]}"
+        )
 
     rows = list(deduped.values())
     _upsert_experiences(session, rows)
@@ -376,4 +549,5 @@ async def run_sync(session: Session) -> dict:
         "rows": len(rows),
         "states": len(STATE_CODES),
         "failed_states": failed_states,
+        "errors": errors,
     }
