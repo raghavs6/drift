@@ -54,3 +54,6 @@ NOTES.md
 backend/benchmarks/tokens.json
 backend/benchmarks/results/*/server.log
 backend/benchmarks/results/*/mock.log
+
+# Ingestion benchmark logs; the content is embedded in the committed .md report
+backend/benchmarks/ingestion/*.log
